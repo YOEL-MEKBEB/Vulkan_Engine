@@ -8,6 +8,7 @@ project ("Vulkan_Engine")
 set(CMAKE_CXX_STANDARD 17)
 
 find_package(Vulkan REQUIRED)
+find_package(SDL2 REQUIRED CONFIG)
 
 add_subdirectory(third_party)
 
