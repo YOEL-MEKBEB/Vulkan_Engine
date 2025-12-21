@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 find_package(Vulkan REQUIRED)
 find_package(SDL2 REQUIRED CONFIG)
+find_package(fmt REQUIRED)
 
 add_subdirectory(third_party)
 
