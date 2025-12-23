@@ -135,6 +135,13 @@ public:
 	VkPipelineLayout _gradientPipelineLayout;
 	ComputePushConstant _breathColorPushConst;
 
+	//immediate submit structure
+	VkFence _imFence;
+	VkCommandBuffer _imCommandBuffer;
+	VkCommandPool _imCommandPool;
+
+	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
+
 private:
 	void init_vulkan();
 	void init_swapchain();
@@ -146,5 +153,7 @@ private:
 	void init_descriptors();
 	void init_pipelines();
 	void init_background_pipelines();
+	void init_imgui();
+	void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
 };
 

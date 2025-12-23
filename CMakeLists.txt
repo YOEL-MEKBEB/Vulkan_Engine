@@ -8,8 +8,8 @@ project ("Vulkan_Engine")
 set(CMAKE_CXX_STANDARD 20)
 
 find_package(Vulkan REQUIRED)
-find_package(SDL2 REQUIRED CONFIG)
-find_package(fmt REQUIRED)
+# find_package(SDL2 REQUIRED CONFIG)
+# find_package(fmt REQUIRED)
 
 add_subdirectory(third_party)
 
