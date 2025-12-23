@@ -5,7 +5,34 @@
 
 #include "vulkan/vulkan_core.h"
 #include <cstdint>
+#include <functional>
 #include <vk_types.h>
+#include "vk_descriptors.h"
+
+struct DeletionQueue{
+	std::deque<std::function<void()>> deleters;
+
+	void push_function(std::function<void()>&& function){
+		deleters.push_back(function);
+	}
+
+	void flush(){
+		for(auto it = deleters.rbegin(); it != deleters.rend(); it++){
+			(*it)(); //call functions
+		}
+		deleters.clear();
+	}
+
+};
+
+
+struct AllocatedImage {
+    VkImage image;
+    VkImageView imageView;
+    VmaAllocation allocation;
+    VkExtent3D imageExtent;
+    VkFormat imageFormat;
+};
 
 struct FrameData{
 	//A VkCommandPool is created from the VkDevice, and you
@@ -31,6 +58,7 @@ struct FrameData{
 	// the command buffer in the GPU to prevent the command buffer from being
 	// overwritten before it's fully processed
 	VkFence _renderFence;
+	DeletionQueue _deletionQueue;
 	
 };
 
@@ -40,7 +68,10 @@ class VulkanEngine {
 public:
 
 	bool _isInitialized{ false };
+
+	//number of frames that have been rendered
 	int _frameNumber {0};
+	
 	bool stop_rendering{ false };
 
 	VkExtent2D _windowExtent{ 1700 , 900 };
@@ -77,11 +108,27 @@ public:
 	std::vector<VkImageView> _swapchainImageViews;
 	VkExtent2D _swapchainExtent;
 
+	//data held by each frame and the queue to submit to.
 	FrameData _frames[FRAME_OVERLAP];
 	FrameData& get_current_frame(){ return _frames[_frameNumber % FRAME_OVERLAP]; }
 	VkQueue _graphicsQueue;
 	uint32_t _graphicsQueueFamily;
 
+	//data structure for deleting stuff;
+	DeletionQueue _mainDeletionQueue;
+
+	//data structure for allocating custom made image.
+	VmaAllocator _allocator;
+	AllocatedImage _drawImage;
+	VkExtent2D _drawExtent;
+
+	DescriptorAllocator globalDescriptorAllocator;
+
+	VkDescriptorSet _drawImageDescriptors;
+	VkDescriptorSetLayout _drawImageDescriptorLayout;
+
+	VkPipeline _gradientPipeline;
+	VkPipelineLayout _gradientPipelineLayout;
 
 private:
 	void init_vulkan();
@@ -90,6 +137,9 @@ private:
 	void init_sync_structures();
 	void create_swapchain(uint32_t width, uint32_t height);
 	void destroy_swapchain();
-	
+	void draw_background(VkCommandBuffer cmd);
+	void init_descriptors();
+	void init_pipelines();
+	void init_background_pipelines();
 };
 

@@ -9,6 +9,10 @@ add_executable(vulkan_guide
     vk_initializers.h
     vk_images.cpp
     vk_images.h
+    vk_pipelines.cpp
+    vk_pipelines.h
+    vk_descriptors.cpp
+    vk_descriptors.h
     )
 
 
