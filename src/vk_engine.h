@@ -25,6 +25,10 @@ struct DeletionQueue{
 
 };
 
+struct ComputePushConstant{
+	float inColorX;
+	float inColorY;
+};
 
 struct AllocatedImage {
     VkImage image;
@@ -129,6 +133,7 @@ public:
 
 	VkPipeline _gradientPipeline;
 	VkPipelineLayout _gradientPipelineLayout;
+	ComputePushConstant _breathColorPushConst;
 
 private:
 	void init_vulkan();

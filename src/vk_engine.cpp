@@ -190,6 +190,11 @@ void VulkanEngine::draw_background(VkCommandBuffer cmd){
     // bind the descriptor set containing the draw image for the compute pipeline
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _gradientPipelineLayout, 0, 1, &_drawImageDescriptors, 0, nullptr);
 
+    _breathColorPushConst.inColorX = std::abs(std::sin(_frameNumber / 120.f));
+    _breathColorPushConst.inColorY = std::abs(std::cos(_frameNumber / 120.f));
+
+   //push constant pushing    
+    vkCmdPushConstants(cmd, _gradientPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstant), &_breathColorPushConst);
     // execute the compute pipeline dispatch. We are using 16x16 workgroup size so we need to divide by it
     vkCmdDispatch(cmd, std::ceil(_drawExtent.width / 16.0), std::ceil(_drawExtent.height / 16.0), 1);
     // fmt::print("{} {}", _drawExtent.width, _drawExtent.height);
@@ -498,11 +503,21 @@ void VulkanEngine::init_pipelines(){
 }
 
 void VulkanEngine::init_background_pipelines(){
+    //setting up push constants to inject into the layout info
+    VkPushConstantRange pushConstant;
+    pushConstant.offset = 0; //the push constant range starts at 0
+    pushConstant.size =sizeof(ComputePushConstant); //setting the size of the pushConstant
+    pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        
+    
+    //creating the layout info for the pipeline
     VkPipelineLayoutCreateInfo computeLayout{};
     computeLayout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     computeLayout.pNext = nullptr;
     computeLayout.pSetLayouts = &_drawImageDescriptorLayout;
     computeLayout.setLayoutCount = 1;
+    computeLayout.pPushConstantRanges = &pushConstant;
+    computeLayout.pushConstantRangeCount = 1;
 
     VK_CHECK(vkCreatePipelineLayout(_device, &computeLayout, nullptr, &_gradientPipelineLayout));
 
@@ -536,5 +551,5 @@ void VulkanEngine::init_background_pipelines(){
     _mainDeletionQueue.push_function([&]() {
     		vkDestroyPipelineLayout(_device, _gradientPipelineLayout, nullptr);
     		vkDestroyPipeline(_device, _gradientPipeline, nullptr);
-    		});
+		});
 }
