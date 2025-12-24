@@ -8,6 +8,7 @@
 #include <functional>
 #include <vk_types.h>
 #include "vk_descriptors.h"
+#include <glm/glm.hpp>
 
 struct DeletionQueue{
 	std::deque<std::function<void()>> deleters;
@@ -25,9 +26,25 @@ struct DeletionQueue{
 
 };
 
-struct ComputePushConstant{
+struct ComputePushConstantOriginal{
 	float inColorX;
 	float inColorY;
+};
+
+struct ComputePushConstant{
+	glm::vec4 data1;
+	glm::vec4 data2;
+	glm::vec4 data3;
+	glm::vec4 data4;
+};
+
+struct ComputeEffect{
+	const char* name;
+
+	VkPipeline pipeline;
+	VkPipelineLayout layout;
+
+	ComputePushConstant data;
 };
 
 struct AllocatedImage {
@@ -133,7 +150,10 @@ public:
 
 	VkPipeline _gradientPipeline;
 	VkPipelineLayout _gradientPipelineLayout;
-	ComputePushConstant _breathColorPushConst;
+	ComputePushConstantOriginal _breathColorPushConst;
+
+	std::vector<ComputeEffect> backgroundEffects;
+	int currentBackgroundEffect{0};
 
 	//immediate submit structure
 	VkFence _imFence;
