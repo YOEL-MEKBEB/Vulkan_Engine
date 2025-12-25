@@ -4,12 +4,14 @@
 #pragma once
 
 #include "vulkan/vulkan_core.h"
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <vk_types.h>
 #include "vk_descriptors.h"
 #include <glm/glm.hpp>
 
+// #include "vk_mem_alloc.h"
 struct DeletionQueue{
 	std::deque<std::function<void()>> deleters;
 
@@ -162,6 +164,15 @@ public:
 
 	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
 
+	//triangle pipelines finally. ;)
+	VkPipelineLayout _trianglePipelineLayout;
+	VkPipeline _trianglePipeline;
+
+	void init_triangle_pipeline();
+
+
+	
+
 private:
 	void init_vulkan();
 	void init_swapchain();
@@ -170,10 +181,14 @@ private:
 	void create_swapchain(uint32_t width, uint32_t height);
 	void destroy_swapchain();
 	void draw_background(VkCommandBuffer cmd);
+	void draw_geometry(VkCommandBuffer cmd);
 	void init_descriptors();
 	void init_pipelines();
 	void init_background_pipelines();
 	void init_imgui();
 	void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
+	// AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+	
+
 };
 

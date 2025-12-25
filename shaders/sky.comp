@@ -73,11 +73,15 @@ void main()
 	ivec2 size = imageSize(image);
     if(texelCoord.x < size.x && texelCoord.y < size.y)
     {
-        vec4 color;
-        mainImage(color,texelCoord);
+        vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
+        // if(gl_LocalInvocationID.x != 0 && gl_LocalInvocationID.y != 0){
+            
+            mainImage(color,texelCoord);
+        // }
 
     
         imageStore(image, texelCoord, color);
+        
     }   
 }
 

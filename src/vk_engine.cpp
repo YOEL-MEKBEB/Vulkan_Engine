@@ -32,8 +32,7 @@ VulkanEngine& VulkanEngine::Get() { return *loadedEngine; }
 constexpr bool bUseValidationLayers = true; //set this to true if debugging
 
 
-void VulkanEngine::init()
-{
+void VulkanEngine::init(){
     // only one engine initialization is allowed with the application.
     assert(loadedEngine == nullptr);
     loadedEngine = this;
@@ -66,8 +65,7 @@ void VulkanEngine::init()
 //the dependencies must be destroyed in the following order
 // CommandPool -> Swapchain -> Surface -> Instance -> SDL_window
 // Device doesn't get destroyed because it's just a handle to the GPU.
-void VulkanEngine::cleanup()
-{
+void VulkanEngine::cleanup(){
     if (_isInitialized) {
         //make sure the gpu has stopped doing its things
     		vkDeviceWaitIdle(_device);
@@ -97,8 +95,8 @@ void VulkanEngine::cleanup()
     loadedEngine = nullptr;
 }
 
-void VulkanEngine::draw()
-{
+
+void VulkanEngine::draw(){
     // wait until the gpu has finished rendering the last frame. Timeout of 1
     // second
     // It’s using nanoseconds for the wait time. If you call the function with 0
@@ -132,9 +130,13 @@ void VulkanEngine::draw()
 
     draw_background(cmd);
 
+    vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+    draw_geometry(cmd);
+
     //make the swapchain image into presentable mode
     
-    vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     
     vkutil::transition_image(cmd , _swapchainImages[swapchainImageIndex],VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
@@ -219,8 +221,8 @@ void VulkanEngine::draw_background(VkCommandBuffer cmd){
     
 }
 
-void VulkanEngine::run()
-{
+
+void VulkanEngine::run(){
 // 	typedef struct SDL_KeyboardEvent
 // {
 //     Uint32 type;        /**< SDL_KEYDOWN or SDL_KEYUP */
@@ -359,7 +361,6 @@ void VulkanEngine::init_vulkan(){
 }
 
 
-
 //creates the swapchain and sets the _swapchain, _swapchainImages, and _swapchainImageViews.
 void VulkanEngine::create_swapchain(uint32_t width, uint32_t height){
 
@@ -383,7 +384,6 @@ void VulkanEngine::create_swapchain(uint32_t width, uint32_t height){
 	_swapchainImages = vkbSwapchain.get_images().value();
 	_swapchainImageViews = vkbSwapchain.get_image_views().value();
 }
-
 
 
 void VulkanEngine::init_swapchain(){
@@ -424,7 +424,6 @@ void VulkanEngine::init_swapchain(){
 }
 
 
-
 void VulkanEngine::destroy_swapchain()
 {
 	vkDestroySwapchainKHR(_device, _swapchain, nullptr);
@@ -435,7 +434,6 @@ void VulkanEngine::destroy_swapchain()
 		vkDestroyImageView(_device, _swapchainImageViews[i], nullptr);
 	}
 }
-
 
 
 void VulkanEngine::init_commands(){
@@ -482,13 +480,14 @@ void VulkanEngine::init_commands(){
     }
     
     VK_CHECK(vkCreateCommandPool(_device, &commandPoolInfo, nullptr, &_imCommandPool));
-    VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_imCommandPool, 2);
+    VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_imCommandPool, 1);
     VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_imCommandBuffer));
 
     _mainDeletionQueue.push_function([=](){
             vkDestroyCommandPool(_device, _imCommandPool, nullptr);
          });
 }
+
 
 void VulkanEngine::init_sync_structures(){
     VkFenceCreateInfo fenceInfo = vkinit::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT);
@@ -507,6 +506,7 @@ void VulkanEngine::init_sync_structures(){
      });
     
 }
+
 
 void VulkanEngine::init_descriptors(){
     //create a descriptor pool that will hold 10 sets with 1 image each
@@ -551,9 +551,12 @@ void VulkanEngine::init_descriptors(){
     });
 }
 
+
 void VulkanEngine::init_pipelines(){
     init_background_pipelines();
+    init_triangle_pipeline();
 }
+
 
 void VulkanEngine::init_background_pipelines(){
     //setting up push constants to inject into the layout info
@@ -633,12 +636,13 @@ void VulkanEngine::init_background_pipelines(){
     vkDestroyShaderModule(_device, gradientShader, nullptr);
     vkDestroyShaderModule(_device, skyShader, nullptr);
     
-    _mainDeletionQueue.push_function([&]() {
+    _mainDeletionQueue.push_function([=]() {
     		vkDestroyPipelineLayout(_device, _gradientPipelineLayout, nullptr);
     		vkDestroyPipeline(_device, gradient.pipeline, nullptr);
     		vkDestroyPipeline(_device, sky.pipeline, nullptr);
 		});
 }
+
 
 void VulkanEngine::immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function){
     VK_CHECK(vkResetFences(_device, 1, &_imFence));
@@ -661,6 +665,7 @@ void VulkanEngine::immediate_submit(std::function<void(VkCommandBuffer cmd)>&& f
 
     
 }
+
 
 void VulkanEngine::init_imgui(){
     VkDescriptorPoolSize pool_sizes[] = { { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
@@ -719,6 +724,7 @@ void VulkanEngine::init_imgui(){
 
 }
 
+
 void VulkanEngine::draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView){
     VkRenderingAttachmentInfo colorAttachment = vkinit::attachment_info(targetImageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VkRenderingInfo renderInfo = vkinit::rendering_info(_swapchainExtent, &colorAttachment, nullptr);
@@ -728,4 +734,84 @@ void VulkanEngine::draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView){
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 
     vkCmdEndRendering(cmd);
+}
+
+
+void VulkanEngine::init_triangle_pipeline(){
+    VkShaderModule vertexShader;
+    
+    if (!vkutil::load_shader_module("shaders/colored_triangle.vert.spv", _device, &vertexShader))
+    {
+        fmt::print("Error when building the compute shader \n");
+    }else{
+        fmt::print("Triangle vertex shader loaded\n");
+    }
+
+    VkShaderModule fragmentShader;
+    if (!vkutil::load_shader_module("shaders/colored_triangle.frag.spv", _device, &fragmentShader))
+    {
+        fmt::print("Error when building the compute shader \n");
+    }else{
+        fmt::print("Triangle fragment shader loaded\n");
+    }
+
+    VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
+    VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_trianglePipelineLayout));
+
+    PipelineBuilder pipelineBuilder;
+    pipelineBuilder._pipelineLayout = _trianglePipelineLayout;
+
+    pipelineBuilder.set_shaders(vertexShader, fragmentShader);
+    pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+    pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+    pipelineBuilder.set_multisampling_none();
+    pipelineBuilder.disable_blending();
+    pipelineBuilder.disable_depth_test();
+    pipelineBuilder.set_color_attachment_format(_drawImage.imageFormat);
+    pipelineBuilder.set_depth_format(VK_FORMAT_UNDEFINED); 
+
+    _trianglePipeline = pipelineBuilder.build_pipeline(_device);
+
+    vkDestroyShaderModule(_device, fragmentShader, nullptr);
+    vkDestroyShaderModule(_device, vertexShader, nullptr);
+
+    _mainDeletionQueue.push_function([&]() {
+        vkDestroyPipelineLayout(_device, _trianglePipelineLayout, nullptr);
+        vkDestroyPipeline(_device, _trianglePipeline, nullptr);
+    });
+}
+
+void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
+    //begin a render pass  connected to our draw image
+    VkRenderingAttachmentInfo colorAttachment = vkinit::attachment_info(_drawImage.imageView, nullptr, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+    VkRenderingInfo renderInfo = vkinit::rendering_info(_drawExtent, &colorAttachment, nullptr);    
+    
+    vkCmdBeginRendering(cmd, &renderInfo);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _trianglePipeline);
+
+    //set dynamic viewport and scissor
+    VkViewport viewport = {};
+    viewport.x = 0;
+    viewport.y = 0;
+    viewport.width = _drawExtent.width;
+    viewport.height = _drawExtent.height;
+    viewport.minDepth = 0.f;
+    viewport.maxDepth = 1.f;
+
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor = {};
+    scissor.offset.x = 0;
+    scissor.offset.y = 0;
+    scissor.extent.width = _drawExtent.width;
+    scissor.extent.height = _drawExtent.height;
+
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+    vkCmdDraw(cmd, 3, 1, 0, 0);
+    vkCmdEndRendering(cmd);
+
 }

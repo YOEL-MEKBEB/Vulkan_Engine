@@ -19,7 +19,7 @@
 #include <fmt/core.h>
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
-//we will add our main reusable types here
+
 
 #define VK_CHECK(x)                                                       \
   do{                                                                     \
@@ -31,3 +31,8 @@
   } while (0)
 
                                                       
+struct AllocatedBuffer{
+  VkBuffer buffer;
+  VmaAllocation allocation;
+  VmaAllocationInfo info;
+};
