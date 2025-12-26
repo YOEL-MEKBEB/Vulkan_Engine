@@ -10,6 +10,7 @@
 #include <vk_types.h>
 #include "vk_descriptors.h"
 #include <glm/glm.hpp>
+#include <vk_loader.h>
 
 // #include "vk_mem_alloc.h"
 struct DeletionQueue{
@@ -143,6 +144,7 @@ public:
 	//data structure for allocating custom made image.
 	VmaAllocator _allocator;
 	AllocatedImage _drawImage;
+	AllocatedImage _depthImage;
 	VkExtent2D _drawExtent;
 
 	DescriptorAllocator globalDescriptorAllocator;
@@ -174,11 +176,12 @@ public:
 	VkPipeline _meshPipeline;
 
 	GPUMeshBuffers rectangle;
-
-	void init_mesh_pipeline();
-	void init_default_data();
-
+	std::vector<std::shared_ptr<MeshAsset>> testMeshes;
 	
+
+	GPUMeshBuffers upload_mesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
+
+
 private:
 	void init_vulkan();
 	void init_swapchain();
@@ -195,6 +198,7 @@ private:
 	void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
 	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
 	void destroy_buffer(const AllocatedBuffer& buffer);
-	GPUMeshBuffers upload_mesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
+	void init_mesh_pipeline();
+	void init_default_data();
 
 };
