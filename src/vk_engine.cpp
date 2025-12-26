@@ -41,7 +41,7 @@ void VulkanEngine::init(){
     // We initialize SDL and create a window with it.
     SDL_Init(SDL_INIT_VIDEO);
 
-    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN);
+    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 
     _window = SDL_CreateWindow(
         "Vulkan Engine",
@@ -114,7 +114,11 @@ void VulkanEngine::draw(){
     // GPU commands without resetting it in the middle.
     VK_CHECK(vkResetFences(_device, 1, &get_current_frame()._renderFence));
     uint32_t swapchainImageIndex;
-    VK_CHECK(vkAcquireNextImageKHR(_device, _swapchain, 1000000000, get_current_frame()._swapchainSemaphore, nullptr, &swapchainImageIndex));
+    VkResult e = vkAcquireNextImageKHR(_device, _swapchain, 1000000000, get_current_frame()._swapchainSemaphore, nullptr, &swapchainImageIndex);
+    if (e == VK_ERROR_OUT_OF_DATE_KHR) {
+        _resize_requested = true;       
+    		return ;
+    }
     //naming it cmd for shorter writing
     VkCommandBuffer cmd = get_current_frame()._mainCommandBuffer;
 
@@ -123,8 +127,10 @@ void VulkanEngine::draw(){
     VK_CHECK(vkResetCommandBuffer(cmd, 0));
 
     VkCommandBufferBeginInfo cmdInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-    _drawExtent.width = _drawImage.imageExtent.width;
-    _drawExtent.height = _drawImage.imageExtent.height;
+    // _drawExtent.width = _drawImage.imageExtent.width;
+    // _drawExtent.height = _drawImage.imageExtent.height;
+    _drawExtent.height = std::min(_swapchainExtent.height, _drawImage.imageExtent.height) * renderScale;
+    _drawExtent.width= std::min(_swapchainExtent.width, _drawImage.imageExtent.width) * renderScale;
 
     //start the command buffer recording
     VK_CHECK(vkBeginCommandBuffer(cmd, &cmdInfo));
@@ -185,7 +191,10 @@ void VulkanEngine::draw(){
     presentInfo.pWaitSemaphores = &get_current_frame()._renderSemaphore;
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pImageIndices = &swapchainImageIndex;
-    VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
+    VkResult presentResult = vkQueuePresentKHR(_graphicsQueue, &presentInfo);
+    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR) {
+        _resize_requested = true;
+    }
     _frameNumber++;
 
 }
@@ -275,6 +284,11 @@ void VulkanEngine::run(){
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
         }
+
+        if(_resize_requested){
+            resize_swapchain();
+        }
+
         // imgui new frame
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplSDL2_NewFrame();
@@ -283,7 +297,8 @@ void VulkanEngine::run(){
         //some imgui UI to test
         // ImGui::ShowDemoWindow();
         if (ImGui::Begin("background")) {
-			
+    			ImGui::SliderFloat("Render Scale",&renderScale, 0.3f, 1.f);
+
     			ComputeEffect& selected = backgroundEffects[currentBackgroundEffect];
 		
     			ImGui::Text("Selected effect: ", selected.name);
@@ -460,6 +475,23 @@ void VulkanEngine::destroy_swapchain()
 }
 
 
+void VulkanEngine::resize_swapchain(){
+    vkDeviceWaitIdle(_device);
+
+    destroy_swapchain();
+
+    int w, h;
+    SDL_GetWindowSize(_window, &w, &h);
+    _windowExtent.width = w;
+    _windowExtent.height = h;
+
+    create_swapchain(_windowExtent.width, _windowExtent.height);
+
+    _resize_requested = false;
+}
+
+
+
 void VulkanEngine::init_commands(){
     //create a command pool for commands submitted to the graphics queue.
     //we also want the pool to allow for resetting of individual command buffers
@@ -578,7 +610,7 @@ void VulkanEngine::init_descriptors(){
 
 void VulkanEngine::init_pipelines(){
     init_background_pipelines();
-    init_triangle_pipeline();
+    // init_triangle_pipeline();
     init_mesh_pipeline();
     init_default_data();
 }
@@ -817,7 +849,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
     
     vkCmdBeginRendering(cmd, &renderInfo);
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _trianglePipeline);
+    // vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _trianglePipeline);
 
     //set dynamic viewport and scissor
     VkViewport viewport = {};
@@ -838,19 +870,25 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
 
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    vkCmdDraw(cmd, 3, 1, 0, 0);
+    // vkCmdDraw(cmd, 3, 1, 0, 0);
 
-    //Recatangle
+    // //Recatangle
+    // vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipeline);
+
+    // GPUDrawPushConstants push_constants;
+    // push_constants.worldMatrix = glm::mat4{ 1.f };
+    // push_constants.vertexBuffer = rectangle.vertexBufferAddress;
+
+    // vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
+    // vkCmdBindIndexBuffer(cmd, rectangle.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+    // vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+
+    
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipeline);
 
     GPUDrawPushConstants push_constants;
     push_constants.worldMatrix = glm::mat4{ 1.f };
-    push_constants.vertexBuffer = rectangle.vertexBufferAddress;
-
-    vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
-    vkCmdBindIndexBuffer(cmd, rectangle.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-
-    vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
 
     glm::mat4 view = glm::translate(glm::vec3{ 0,0,-5 });
     // camera projection
@@ -991,8 +1029,12 @@ void VulkanEngine::init_mesh_pipeline(){
     pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
     //no multisampling
     pipelineBuilder.set_multisampling_none();
+    
     //no blending
-    pipelineBuilder.disable_blending();
+    // pipelineBuilder.disable_blending();
+
+    //blending by adding colors together
+    pipelineBuilder.enable_blending_additive();
 
     // pipelineBuilder.disable_depth_test();
     pipelineBuilder.enable_depth_test(true, VK_COMPARE_OP_GREATER_OR_EQUAL);

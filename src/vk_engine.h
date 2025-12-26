@@ -92,6 +92,7 @@ class VulkanEngine {
 public:
 
 	bool _isInitialized{ false };
+	bool _resize_requested{ false };
 
 	//number of frames that have been rendered
 	int _frameNumber {0};
@@ -146,6 +147,7 @@ public:
 	AllocatedImage _drawImage;
 	AllocatedImage _depthImage;
 	VkExtent2D _drawExtent;
+	float renderScale = 1.f;
 
 	DescriptorAllocator globalDescriptorAllocator;
 
@@ -200,5 +202,5 @@ private:
 	void destroy_buffer(const AllocatedBuffer& buffer);
 	void init_mesh_pipeline();
 	void init_default_data();
-
+	void resize_swapchain();
 };
