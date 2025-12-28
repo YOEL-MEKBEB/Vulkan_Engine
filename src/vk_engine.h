@@ -58,6 +58,15 @@ struct AllocatedImage {
     VkFormat imageFormat;
 };
 
+struct GPUSceneData {
+    glm::mat4 view;
+    glm::mat4 proj;
+    glm::mat4 viewproj;
+    glm::vec4 ambientColor;
+    glm::vec4 sunlightDirection; // w for sun power
+    glm::vec4 sunlightColor;
+};
+
 struct FrameData{
 	//A VkCommandPool is created from the VkDevice, and you
 	// need the index of the queue family this command pool will create commands from.
@@ -83,6 +92,9 @@ struct FrameData{
 	// overwritten before it's fully processed
 	VkFence _renderFence;
 	DeletionQueue _deletionQueue;
+
+	//will be used for dynamic descriptor allocation on runtime
+	DescriptorAllocatorGrowable _frameDescriptors;
 	
 };
 
@@ -182,6 +194,27 @@ public:
 	
 
 	GPUMeshBuffers upload_mesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
+
+	//contains all of the view and projections matrices
+	// and data for lighting models
+	GPUSceneData sceneData;
+	VkDescriptorSetLayout _gpuSceneDataDescriptorLayout;
+
+	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
+	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
+	void destroy_image(const AllocatedImage& img);
+
+	// These are default textures for when loading textures fail.
+	AllocatedImage _whiteImage;
+	AllocatedImage _blackImage;
+	AllocatedImage _greyImage;
+	AllocatedImage _errorCheckerboardImage;
+
+  VkSampler _defaultSamplerLinear;
+	VkSampler _defaultSamplerNearest;
+
+	//descriptor set layout for textures
+	VkDescriptorSetLayout _singleImageDescriptorLayout;
 
 
 private:
