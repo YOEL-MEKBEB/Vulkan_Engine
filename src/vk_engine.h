@@ -11,8 +11,8 @@
 #include "vk_descriptors.h"
 #include <glm/glm.hpp>
 #include <vk_loader.h>
+#include <camera.h>
 
-// #include "vk_mem_alloc.h"
 struct DeletionQueue{
 	std::deque<std::function<void()>> deleters;
 
@@ -98,23 +98,6 @@ struct FrameData{
 	
 };
 
-struct RenderObject {
-    uint32_t indexCount;
-    uint32_t firstIndex;
-    VkBuffer indexBuffer;
-    
-    MaterialInstance* material;
-
-    glm::mat4 transform;
-    VkDeviceAddress vertexBufferAddress;
-};
-
-
-// class IRenderable {
-
-//     virtual void Draw(const glm::mat4& topMatrix, DrawContext& ctx) = 0;
-// };
-
 
 struct GLTFMetallic_Roughness {
 	MaterialPipeline opaquePipeline;
@@ -146,11 +129,37 @@ struct GLTFMetallic_Roughness {
 	MaterialInstance write_material(VkDevice device, MaterialPass pass, const MaterialResources& resources, DescriptorAllocatorGrowable& descriptorAllocator);
 };
 
+
+struct MeshNode : public Node{
+	std::shared_ptr<MeshAsset> mesh;
+
+	virtual void Draw(const glm::mat4& topMatrix, DrawContext& ctx) override;
+};
+
+
+struct RenderObject {
+    uint32_t indexCount;
+    uint32_t firstIndex;
+    VkBuffer indexBuffer;
+    
+    MaterialInstance* material;
+
+    glm::mat4 transform;
+    VkDeviceAddress vertexBufferAddress;
+};
+
+
+struct DrawContext{
+	std::vector<RenderObject> OpaqueSurfaces;
+};
+
 constexpr unsigned int FRAME_OVERLAP = 2;
 
 class VulkanEngine {
 public:
 
+	Camera mainCamera;
+	
 	bool _isInitialized{ false };
 	bool _resize_requested{ false };
 
@@ -267,6 +276,11 @@ public:
 	//materials
 	MaterialInstance defaultData;
 	GLTFMetallic_Roughness metalRoughMaterial;
+
+	DrawContext mainDrawContext;
+	std::unordered_map<std::string, std::shared_ptr<Node>> loadedNodes;
+
+	void update_scene();
 
 
 private:
