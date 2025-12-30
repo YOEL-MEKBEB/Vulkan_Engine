@@ -13,6 +13,14 @@
 #include <vk_loader.h>
 #include <camera.h>
 
+struct EngineStats{
+	float frametime;
+	int triangle_count;
+	int drawcall_count;
+	float scene_update_time;
+	float mesh_draw_time;
+};
+
 struct DeletionQueue{
 	std::deque<std::function<void()>> deleters;
 
@@ -143,7 +151,7 @@ struct RenderObject {
     VkBuffer indexBuffer;
     
     MaterialInstance* material;
-
+		Bounds bounds;
     glm::mat4 transform;
     VkDeviceAddress vertexBufferAddress;
 };
@@ -160,6 +168,7 @@ class VulkanEngine {
 public:
 
 	Camera mainCamera;
+	EngineStats stats;
 	
 	bool _isInitialized{ false };
 	bool _resize_requested{ false };
@@ -186,8 +195,7 @@ public:
 
 	//run main loop
 	void run();
-
-
+	
 	VkInstance _instance; // The connection to the Vulkan library/loader
 	VkDebugUtilsMessengerEXT _debug_messenger; // Handle for capturing debug/validation messages
 	VkPhysicalDevice _chosenGPU; // Handle to the actual physical hardware (GPU)

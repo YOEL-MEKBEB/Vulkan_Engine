@@ -4,9 +4,11 @@
 #include <unordered_map>
 #include <filesystem>
 
-#include <fastgltf/glm_element_traits.hpp>
-#include <fastgltf/core.hpp>
-#include <fastgltf/tools.hpp>
+struct Bounds{
+    glm::vec3 origin;
+    float sphereRadius;
+    glm::vec3 extents;  
+};
 
 struct GLTFMaterial {
 	MaterialInstance data;
@@ -15,6 +17,7 @@ struct GLTFMaterial {
 struct GeoSurface {
     uint32_t startIndex;
     uint32_t count;
+    Bounds bounds;
     std::shared_ptr<GLTFMaterial> material;
 };
 

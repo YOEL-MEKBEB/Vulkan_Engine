@@ -37,7 +37,6 @@ void Camera::processSDLEvent(SDL_Event& e){
         if (e.button.button == SDL_BUTTON_RIGHT) {
             // Right mouse button was clicked!
             rMouse = true;
-            SDL_ShowCursor(SDL_DISABLE);
             fmt::print("rMouse is true\n");
         }
     }
@@ -45,7 +44,6 @@ void Camera::processSDLEvent(SDL_Event& e){
         if (e.button.button == SDL_BUTTON_RIGHT) {
             // Right mouse button was unclicked!
             rMouse = false;
-            SDL_ShowCursor(SDL_ENABLE);
             fmt::print("rMouse is false\n");
         }
     }
@@ -56,7 +54,6 @@ void Camera::processSDLEvent(SDL_Event& e){
         pitch -= (float)e.motion.yrel / 200.f;
     }
 
-    SDL_ShowCursor(SDL_QUERY);
 }
 
 glm::mat4 Camera::getViewMatrix()
