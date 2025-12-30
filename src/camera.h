@@ -3,6 +3,7 @@
 
 class Camera{
   public:
+    bool rMouse = false;
     glm::vec3 velocity;
     glm::vec3 position;
 

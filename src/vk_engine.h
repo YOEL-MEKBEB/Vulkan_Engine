@@ -151,6 +151,7 @@ struct RenderObject {
 
 struct DrawContext{
 	std::vector<RenderObject> OpaqueSurfaces;
+	std::vector<RenderObject> TransparentSurfaces;
 };
 
 constexpr unsigned int FRAME_OVERLAP = 2;
@@ -251,6 +252,8 @@ public:
 	
 
 	GPUMeshBuffers upload_mesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
+	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+	void destroy_buffer(const AllocatedBuffer& buffer);
 
 	//contains all of the view and projections matrices
 	// and data for lighting models
@@ -280,7 +283,11 @@ public:
 	DrawContext mainDrawContext;
 	std::unordered_map<std::string, std::shared_ptr<Node>> loadedNodes;
 
+	std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> loadedScenes;
+
+
 	void update_scene();
+
 
 
 private:
@@ -297,8 +304,6 @@ private:
 	void init_background_pipelines();
 	void init_imgui();
 	void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
-	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
-	void destroy_buffer(const AllocatedBuffer& buffer);
 	void init_mesh_pipeline();
 	void init_default_data();
 	void resize_swapchain();

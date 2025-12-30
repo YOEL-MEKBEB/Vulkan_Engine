@@ -63,6 +63,20 @@ void VulkanEngine::init(){
 
     // everything went fine
     _isInitialized = true;
+
+    mainCamera.velocity = glm::vec3(0.f);
+    // mainCamera.position = glm::vec3(0, 0, 5);
+    mainCamera.position = glm::vec3(30.f, -00.f, -085.f);
+
+    mainCamera.pitch = 0;
+    mainCamera.yaw = 0;
+
+    std::string structurePath = { "assets/structure.glb" };
+    auto structureFile = loadGltf(this,structurePath);
+
+    assert(structureFile.has_value());
+
+    loadedScenes["structure"] = *structureFile;
 }
 
 //the dependencies must be destroyed in the following order
@@ -72,6 +86,7 @@ void VulkanEngine::cleanup(){
     if (_isInitialized) {
         //make sure the gpu has stopped doing its things
     		vkDeviceWaitIdle(_device);
+        loadedScenes.clear();
 
         // metalRoughMaterial.clear_resources(_device);                                 
     		for (int i = 0; i < FRAME_OVERLAP; i++) {
@@ -575,7 +590,9 @@ void VulkanEngine::init_descriptors(){
     //create a descriptor pool that will hold 10 sets with 1 image each
     std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes =
     {
-        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 }
+        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 }, 
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 } 
     };
 
     globalDescriptorAllocator.init(_device, 10, sizes);
@@ -656,11 +673,6 @@ void VulkanEngine::init_pipelines(){
     metalRoughMaterial.build_pipelines(this);
     init_default_data();
 
-    mainCamera.velocity = glm::vec3(0.f);
-    mainCamera.position = glm::vec3(0, 0, 5);
-
-    mainCamera.pitch = 0;
-    mainCamera.yaw = 0;
 }
 
 
@@ -990,8 +1002,24 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
 
     // vkCmdDrawIndexed(cmd, testMeshes[2]->surfaces[0].count, 1, testMeshes[2]->surfaces[0].startIndex, 0, 0);
 
-    for (const RenderObject& draw : mainDrawContext.OpaqueSurfaces) {
+    // for (const RenderObject& draw : mainDrawContext.OpaqueSurfaces) {
 
+    //     vkCmdBindPipeline(cmd,VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->pipeline);
+    //     vkCmdBindDescriptorSets(cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,draw.material->pipeline->layout, 0,1, &globalDescriptor,0,nullptr );
+    //     vkCmdBindDescriptorSets(cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,draw.material->pipeline->layout, 1,1, &draw.material->materialSet,0,nullptr );
+
+    //     vkCmdBindIndexBuffer(cmd, draw.indexBuffer,0,VK_INDEX_TYPE_UINT32);
+
+    //     GPUDrawPushConstants pushConstants;
+    //     pushConstants.vertexBuffer = draw.vertexBufferAddress;
+    //     pushConstants.worldMatrix = draw.transform;
+    //     vkCmdPushConstants(cmd,draw.material->pipeline->layout ,VK_SHADER_STAGE_VERTEX_BIT,0, sizeof(GPUDrawPushConstants), &pushConstants);
+
+    //     vkCmdDrawIndexed(cmd,draw.indexCount,1,draw.firstIndex,0,0);y
+    // }
+
+    auto draw = [&](const RenderObject& draw){
+        
         vkCmdBindPipeline(cmd,VK_PIPELINE_BIND_POINT_GRAPHICS, draw.material->pipeline->pipeline);
         vkCmdBindDescriptorSets(cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,draw.material->pipeline->layout, 0,1, &globalDescriptor,0,nullptr );
         vkCmdBindDescriptorSets(cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,draw.material->pipeline->layout, 1,1, &draw.material->materialSet,0,nullptr );
@@ -1004,8 +1032,15 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
         vkCmdPushConstants(cmd,draw.material->pipeline->layout ,VK_SHADER_STAGE_VERTEX_BIT,0, sizeof(GPUDrawPushConstants), &pushConstants);
 
         vkCmdDrawIndexed(cmd,draw.indexCount,1,draw.firstIndex,0,0);
+    };
+
+    for (auto& r : mainDrawContext.OpaqueSurfaces) {
+    draw(r);
     }
 
+    for (auto& r : mainDrawContext.TransparentSurfaces) {
+        draw(r);
+    }
     vkCmdEndRendering(cmd);
 
 }
@@ -1471,11 +1506,14 @@ void VulkanEngine::update_scene(){
     mainCamera.update();
     
     mainDrawContext.OpaqueSurfaces.clear();
+    mainDrawContext.TransparentSurfaces.clear();
     loadedNodes["Suzanne"]->Draw(glm::mat4{1.f}, mainDrawContext);
     // sceneData.view = glm::translate(glm::vec3{ 0,0,-5 });
     sceneData.view = mainCamera.getViewMatrix();
     // camera projection
     sceneData.proj = glm::perspective(glm::radians(70.f), (float)_windowExtent.width / (float)_windowExtent.height, 10000.f, 0.1f);
+
+    // sceneData.proj = glm::perspective(glm::radians(70.f), (float)_windowExtent.width / (float)_windowExtent.height, 0.1f, 10000.f);
 
     // invert the Y direction on projection matrix so that we are more similar
     // to opengl and gltf axis
@@ -1484,7 +1522,7 @@ void VulkanEngine::update_scene(){
 
     //some default lighting parameters
     sceneData.ambientColor = glm::vec4(0.3f);
-    sceneData.sunlightColor = glm::vec4(1.f, 0.f, 0.f, 1.f);
+    sceneData.sunlightColor = glm::vec4(1.f, 1.f, 1.f, 1.f);
     sceneData.sunlightDirection = glm::vec4(0,1,0.5,1.f);
 
     for (int x = -2; x < 4; x++){
@@ -1494,4 +1532,5 @@ void VulkanEngine::update_scene(){
         loadedNodes["Cube"]->Draw(translation * scale, mainDrawContext);
 
     }
+    loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
 }
