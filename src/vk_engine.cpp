@@ -115,6 +115,12 @@ void VulkanEngine::init(){
     assert(structureFile.has_value());
 
     loadedScenes["structure"] = *structureFile;
+
+    sceneData.ambientColor = glm::vec4(0.1f, 0.1f, 0.2f, 1.0f);
+    sceneData.specularColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+    sceneData.sunlightColor = glm::vec4(1.0f, 0.95f, 0.8f, 1.0f);
+    sceneData.sunlightDirection = glm::vec4(0,1,0.5,1.f);
+    sceneData.shininess = 100;
 }
 
 //the dependencies must be destroyed in the following order
@@ -382,6 +388,17 @@ void VulkanEngine::run(){
         ImGui::Text("triangles %i", stats.triangle_count);
         ImGui::Text("draws %i", stats.drawcall_count);
         ImGui::End();
+
+        if (ImGui::Begin("sceneData")) {
+    			ImGui::InputFloat4("Ambient Color",(float*)& sceneData.ambientColor);
+    			ImGui::InputFloat4("Diffuse Color",(float*)& sceneData.sunlightColor);
+    			ImGui::InputFloat4("Specular Color", (float*)& sceneData.specularColor);
+    			ImGui::InputFloat4("sun light direction",(float*)& sceneData.sunlightDirection);
+    			ImGui::InputInt("shininess", &sceneData.shininess);
+    			// ImGui::InputFloat4("data4",(float*)& selected.d ata.data4);
+    		}
+
+    		ImGui::End();
 
         //make imgui calculate internal draw structures
         ImGui::Render();
@@ -1520,13 +1537,22 @@ void VulkanEngine::destroy_image(const AllocatedImage& img){
 
 
 void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine){
+    // VkShaderModule meshFragShader;
+    // if (!vkutil::load_shader_module("shaders/mesh.frag.spv", engine->_device, &meshFragShader)) {
+    //     fmt::println("Error when building the triangle fragment shader module");
+    // }
+
+    // VkShaderModule meshVertexShader;
+    // if (!vkutil::load_shader_module("shaders/mesh.vert.spv", engine->_device, &meshVertexShader)) {
+    //     fmt::println("Error when building the triangle vertex shader module");
+    // }
     VkShaderModule meshFragShader;
-    if (!vkutil::load_shader_module("shaders/mesh.frag.spv", engine->_device, &meshFragShader)) {
+    if (!vkutil::load_shader_module("shaders/mesh_phong.frag.spv", engine->_device, &meshFragShader)) {
         fmt::println("Error when building the triangle fragment shader module");
     }
 
     VkShaderModule meshVertexShader;
-    if (!vkutil::load_shader_module("shaders/mesh.vert.spv", engine->_device, &meshVertexShader)) {
+    if (!vkutil::load_shader_module("shaders/mesh_phong.vert.spv", engine->_device, &meshVertexShader)) {
         fmt::println("Error when building the triangle vertex shader module");
     }
 
@@ -1650,16 +1676,18 @@ void VulkanEngine::update_scene(){
     // camera projection
     sceneData.proj = glm::perspective(glm::radians(70.f), (float)_windowExtent.width / (float)_windowExtent.height, 10000.f, 0.1f);
 
+    sceneData.cameraPosition = glm::vec4(mainCamera.position, 1.f);
 
     // invert the Y direction on projection matrix so that we are more similar
     // to opengl and gltf axis
     sceneData.proj[1][1] *= -1;
     sceneData.viewproj = sceneData.proj * sceneData.view;
-
+    
     //some default lighting parameters
-    sceneData.ambientColor = glm::vec4(0.3f);
-    sceneData.sunlightColor = glm::vec4(1.f, 1.f, 1.f, 1.f);
-    sceneData.sunlightDirection = glm::vec4(0,1,0.5,1.f);
+    // sceneData.ambientColor = glm::vec4(0.3f);
+    // sceneData.sunlightColor = glm::vec4(1.f, 1.f, 1.f, 1.f);
+    // sceneData.sunlightDirection = glm::vec4(0,1,0.5,1.f);
+ 
 
     for (int x = -2; x < 4; x++){
         glm::mat4 scale = glm::scale(glm::vec3{0.2});

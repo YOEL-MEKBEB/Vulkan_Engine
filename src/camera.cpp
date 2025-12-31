@@ -5,6 +5,7 @@
 void Camera::update(){
   glm::mat4 cameraRotation = getRotationMatrix();
   position += glm::vec3(cameraRotation * glm::vec4(velocity * 0.5f, 0.f));
+
   const Uint8* state = SDL_GetKeyboardState(nullptr);
 
   velocity.z = (state[SDL_SCANCODE_S] - state[SDL_SCANCODE_W]) * 0.3;
