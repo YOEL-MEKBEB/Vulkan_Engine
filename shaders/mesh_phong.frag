@@ -28,7 +28,9 @@ void main(){
 	// outFragColor = vec4(color * lightValue *  sceneData.sunlightColor.xyz + ambient ,1.0f);
     vec3 ambientDiffuse= ambient + diffuse;
     vec3 surfaceColor = ambientDiffuse * color.rgb;
+    float gamma = 2.2;
     outFragColor = vec4(surfaceColor + specular, 1.0f);
+    outFragColor.rgb = pow(outFragColor.rgb, vec3(1.0/gamma));
     
 }
 

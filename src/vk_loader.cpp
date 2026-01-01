@@ -368,11 +368,14 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::f
     		if (img.has_value()) {
     			images.push_back(*img);
     			file.images[image.name.c_str()] = *img;
+    			file.imageVector.push_back(*img);
+    			
     		}
     		else {
     			// we failed to load, so lets give the slot a default white texture to not
     			// completely break loading
     			images.push_back(engine->_errorCheckerboardImage);
+    			file.imageVector.push_back(engine->_errorCheckerboardImage);
     			std::cout << "gltf failed to load texture " << image.name << std::endl;
     		}
     	}
@@ -605,18 +608,26 @@ void LoadedGLTF::clearAll(){
         creator->destroy_buffer(v->meshBuffers.vertexBuffer);
     }
 
-    for (auto& [k, v] : images) {
+    // for (auto& [k, v] : images) {
         
-        if (v.image == creator->_errorCheckerboardImage.image) {
-            //dont destroy the default images
-            continue;
-        }
-        creator->destroy_image(v);
-    }
+    //     if (v.image == creator->_errorCheckerboardImage.image) {
+    //         //dont destroy the default images
+    //         continue;
+    //     }
+    //     creator->destroy_image(v);
+    // }
 
+    for(auto& img: imageVector){
+        if(img.image != creator->_errorCheckerboardImage.image){
+            creator->destroy_image(img);
+        }
+    }
     for (auto& sampler : samplers) {
     		vkDestroySampler(dv, sampler, nullptr);
     }
 }
 
+LoadedGLTF::~LoadedGLTF() { 
+    clearAll(); 
+}
 

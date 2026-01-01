@@ -104,17 +104,23 @@ void VulkanEngine::init(){
 
     mainCamera.velocity = glm::vec3(0.f);
     // mainCamera.position = glm::vec3(0, 0, 5);
-    mainCamera.position = glm::vec3(30.f, -00.f, -085.f);
+    mainCamera.position = glm::vec3(30.f, 1.f, 5.f);
 
     mainCamera.pitch = 0;
     mainCamera.yaw = 0;
 
     std::string structurePath = { "assets/structure.glb" };
+    std::string cityPath = {"assets/VirtualCity.glb"};
+    
     auto structureFile = loadGltf(this,structurePath);
-
     assert(structureFile.has_value());
+    
+    auto cityFile = loadGltf(this, cityPath);
+    assert(cityFile.has_value());
+
 
     loadedScenes["structure"] = *structureFile;
+    loadedScenes["virtual city"] = *cityFile;
 
     sceneData.ambientColor = glm::vec4(0.1f, 0.1f, 0.2f, 1.0f);
     sceneData.specularColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
@@ -1696,5 +1702,8 @@ void VulkanEngine::update_scene(){
         loadedNodes["Cube"]->Draw(translation * scale, mainDrawContext);
 
     }
+    glm::mat4 translate = glm::translate(glm::mat4{ 1.f }, glm::vec3(200, 0, 0)); 
     loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
+    loadedScenes["virtual city"]->Draw(translate, mainDrawContext);
 }
+ 
