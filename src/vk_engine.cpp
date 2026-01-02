@@ -103,11 +103,16 @@ void VulkanEngine::init(){
     _isInitialized = true;
 
     mainCamera.velocity = glm::vec3(0.f);
-    // mainCamera.position = glm::vec3(0, 0, 5);
-    mainCamera.position = glm::vec3(30.f, 1.f, 5.f);
+    mainCamera.position = glm::vec3(0, 0, 10);
+    // mainCamera.position = glm::vec3(30.f, 1.f, 5.f);
 
     mainCamera.pitch = 0;
     mainCamera.yaw = 0;
+    
+    lightCamera.velocity = glm::vec3(0.f);
+    // lightCamera.position = glm::vec3(0, 0, 5);
+    lightCamera.pitch = 0;
+    lightCamera.yaw = 0;
 
     std::string structurePath = { "assets/structure.glb" };
     std::string cityPath = {"assets/VirtualCity.glb"};
@@ -127,6 +132,8 @@ void VulkanEngine::init(){
     sceneData.sunlightColor = glm::vec4(1.0f, 0.95f, 0.8f, 1.0f);
     sceneData.sunlightDirection = glm::vec4(0,1,0.5,1.f);
     sceneData.shininess = 100;
+
+    lightCamera.position = 100.f * sceneData.sunlightDirection;
 }
 
 //the dependencies must be destroyed in the following order
@@ -173,6 +180,8 @@ void VulkanEngine::draw(){
 
     //sets the parameters for updating the scenes.
     update_scene();
+
+    
     // wait until the gpu has finished rendering the last frame. Timeout of 1
     // second
     // It’s using nanoseconds for the wait time. If you call the function with 0
@@ -215,6 +224,13 @@ void VulkanEngine::draw(){
 
     vkutil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     vkutil::transition_image(cmd, _depthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+
+    //render the shadow map by making it writable as a depth buffer then
+    //changing it into a readable texture for draw_geometry
+    vkutil::transition_image(cmd, _lightDepthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+    render_shadow_map(cmd);
+    vkutil::transition_image(cmd, _lightDepthImage.image, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
 
     draw_geometry(cmd);
 
@@ -515,6 +531,12 @@ void VulkanEngine::init_swapchain(){
         _windowExtent.height,
         1
     };
+
+    VkExtent3D lightImageExtent = {
+        _windowExtent.width,
+        _windowExtent.height,
+        1
+    };
     //hardcoding the draw format to 32 bit float
     _drawImage.imageFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
     _drawImage.imageExtent = drawImageExtent;
@@ -554,12 +576,30 @@ void VulkanEngine::init_swapchain(){
     VK_CHECK(vkCreateImageView(_device, &dview_info, nullptr, &_depthImage.imageView));
 
 
+    /////////////////////Depth map for shadow mapping //////////////////
+
+    _lightDepthImage.imageFormat = VK_FORMAT_D32_SFLOAT;
+    _lightDepthImage.imageExtent = lightImageExtent; 
+
+    VkImageUsageFlags lightDepthImageUsages{};
+    lightDepthImageUsages |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+    VkImageCreateInfo ldimg_info = vkinit::image_create_info(_lightDepthImage.imageFormat, lightDepthImageUsages, lightImageExtent);
+    vmaCreateImage(_allocator, &ldimg_info, &rimg_allocinfo, &_lightDepthImage.image, &_lightDepthImage.allocation, nullptr);
+
+    VkImageViewCreateInfo ldview_info = vkinit::imageview_create_info(_lightDepthImage.imageFormat, _lightDepthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT);
+    VK_CHECK(vkCreateImageView(_device, &ldview_info, nullptr, &_lightDepthImage.imageView));
+
+    /////////////////////////////////////////
+    
     	//add to deletion queues
     	_mainDeletionQueue.push_function([=]() {
     		vkDestroyImageView(_device, _drawImage.imageView, nullptr);
     		vmaDestroyImage(_allocator, _drawImage.image, _drawImage.allocation);
     		vkDestroyImageView(_device, _depthImage.imageView, nullptr);
     		vmaDestroyImage(_allocator, _depthImage.image, _depthImage.allocation);
+    		vkDestroyImageView(_device, _lightDepthImage.imageView, nullptr);
+    		vmaDestroyImage(_allocator, _lightDepthImage.image, _lightDepthImage.allocation);
     	});
 }
 
@@ -686,7 +726,14 @@ void VulkanEngine::init_descriptors(){
     {
     	DescriptorLayoutBuilder builder;
     	builder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    	builder.add_binding(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    	builder.add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER); // ShadowMap Texture
     	_gpuSceneDataDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+    }
+    {
+    	DescriptorLayoutBuilder builder;
+    	builder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    	_shadowSceneDataDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT );
     }
 
     {
@@ -694,6 +741,8 @@ void VulkanEngine::init_descriptors(){
     	builder.add_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     	_singleImageDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_FRAGMENT_BIT);
     }
+
+    
 
     //allocate a descriptor set for our draw image
     _drawImageDescriptors = globalDescriptorAllocator.allocate(_device,_drawImageDescriptorLayout);	
@@ -724,6 +773,7 @@ void VulkanEngine::init_descriptors(){
         vkDestroyDescriptorSetLayout(_device, _drawImageDescriptorLayout, nullptr);
         vkDestroyDescriptorSetLayout(_device, _gpuSceneDataDescriptorLayout, nullptr);
         vkDestroyDescriptorSetLayout(_device, _singleImageDescriptorLayout, nullptr);
+        vkDestroyDescriptorSetLayout(_device, _shadowSceneDataDescriptorLayout, nullptr);
     });
 
     for (int i = 0; i < FRAME_OVERLAP; i++) {
@@ -750,6 +800,7 @@ void VulkanEngine::init_pipelines(){
     // init_triangle_pipeline();
     init_mesh_pipeline();
     metalRoughMaterial.build_pipelines(this);
+    init_shadow_map_pipeline();
     init_default_data();
 
 }
@@ -988,7 +1039,9 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
         if(is_visible(mainDrawContext.OpaqueSurfaces[i], sceneData.viewproj))
             opaque_draws.push_back(i);
     }
-   
+
+
+
     std::sort(opaque_draws.begin(), opaque_draws.end(), [&](const auto& iA, const auto& iB) {
         const RenderObject& A = mainDrawContext.OpaqueSurfaces[iA];
         const RenderObject& B = mainDrawContext.OpaqueSurfaces[iB];
@@ -999,6 +1052,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
             return A.material < B.material;
         }
     });
+    
     
     //reset counters
     stats.drawcall_count = 0;
@@ -1040,19 +1094,34 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
 
     //add it to the deletion queue of this frame so it gets deleted once its been used
     get_current_frame()._deletionQueue.push_function([=, this]() {
-    destroy_buffer(gpuSceneDataBuffer);
+        destroy_buffer(gpuSceneDataBuffer);
     });
+
+    AllocatedBuffer gpuShadowBuffer = create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+    get_current_frame()._deletionQueue.push_function([=, this]() {
+        destroy_buffer(gpuShadowBuffer);
+    });
+    
 
     //write the buffer
     GPUSceneData* sceneUniformData = (GPUSceneData*)gpuSceneDataBuffer.allocation->GetMappedData();
     *sceneUniformData = sceneData;
+    GPUSceneData* shadowUniformData = (GPUSceneData*)gpuShadowBuffer.allocation->GetMappedData();
+    *shadowUniformData = shadowSceneData;
 
     //create a descriptor set that binds that buffer and update it
     VkDescriptorSet globalDescriptor = get_current_frame()._frameDescriptors.allocate(_device, _gpuSceneDataDescriptorLayout);
 
     DescriptorWriter writer;
     writer.write_buffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    writer.write_buffer(1, gpuShadowBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    writer.write_image(2, _lightDepthImage.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.update_set(_device, globalDescriptor);
+    
+    
+    
+  
 
     // vkCmdDraw(cmd, 3, 1, 0, 0);
 
@@ -1080,9 +1149,8 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
         writer.update_set(_device, imageSet);
     }
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipelineLayout, 0, 1, &imageSet, 0, nullptr);
-
-
-    // GPUDrawPushConstants push_constants;
+   
+    // GPUDrawPushConstants push_constants; 
     // push_constants.worldMatrix = glm::mat4{ 1.f };
 
     // glm::mat4 view = glm::translate(glm::vec3{ 0,0,-5 });
@@ -1276,7 +1344,7 @@ void VulkanEngine::init_mesh_pipeline(){
         fmt::print("Error when building the triangle fragment shader module");
     }
     else {
-        fmt::print("Triangle fragment shader succesfully loaded");
+        fmt::print("Triangle fragment shader succesfully loaded\n");
     }
 
     VkShaderModule triangleVertexShader;
@@ -1284,7 +1352,7 @@ void VulkanEngine::init_mesh_pipeline(){
         fmt::print("Error when building the triangle vertex shader module");
     }
     else {
-        fmt::print("Triangle vertex shader succesfully loaded");
+        fmt::print("Triangle vertex shader succesfully loaded\n");
     }
 
     VkPushConstantRange bufferRange{};
@@ -1554,12 +1622,12 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine){
     // }
     VkShaderModule meshFragShader;
     if (!vkutil::load_shader_module("shaders/mesh_phong.frag.spv", engine->_device, &meshFragShader)) {
-        fmt::println("Error when building the triangle fragment shader module");
+        fmt::println("Error when building the triangle fragment shader module\n");
     }
 
     VkShaderModule meshVertexShader;
     if (!vkutil::load_shader_module("shaders/mesh_phong.vert.spv", engine->_device, &meshVertexShader)) {
-        fmt::println("Error when building the triangle vertex shader module");
+        fmt::println("Error when building the triangle vertex shader module\n");
     }
 
     VkPushConstantRange matrixRange{};
@@ -1673,10 +1741,18 @@ void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx){
 void VulkanEngine::update_scene(){
     
     mainCamera.update();
+    lightCamera.update();
+    lightCamera.position = 10.f * sceneData.sunlightDirection;
+    
     
     mainDrawContext.OpaqueSurfaces.clear();
     mainDrawContext.TransparentSurfaces.clear();
+    lightDrawContext.OpaqueSurfaces.clear();
+    lightDrawContext.TransparentSurfaces.clear();
+
     loadedNodes["Suzanne"]->Draw(glm::mat4{1.f}, mainDrawContext);
+
+    loadedNodes["Suzanne"]->Draw(glm::mat4{1.f}, lightDrawContext);
     // sceneData.view = glm::translate(glm::vec3{ 0,0,-5 });
     sceneData.view = mainCamera.getViewMatrix();
     // camera projection
@@ -1688,6 +1764,26 @@ void VulkanEngine::update_scene(){
     // to opengl and gltf axis
     sceneData.proj[1][1] *= -1;
     sceneData.viewproj = sceneData.proj * sceneData.view;
+
+    shadowSceneData.view = glm::lookAt(lightCamera.position, glm::vec3(0,0,0), glm::vec3(0,1,0));
+    
+    // shadowSceneData.proj = glm::ortho(-(float)(2 * _windowExtent.width), (float)(2 * _windowExtent.width), -(float)(2 * _windowExtent.height), (float)(2 * _windowExtent.height), 10000.f, 0.1f); 
+    float sizew = 20.f;
+    float sizeh = 20.f;
+    // float sizew = (float)_windowExtent.width/2.f;
+    // float sizeh = (float)_windowExtent.height/2.f;
+    // shadowSceneData.proj = glm::ortho(-sizew, sizew, -sizeh, sizeh, 10000.f, 0.1f);
+    shadowSceneData.proj = glm::ortho(-sizew, sizew, -sizeh, sizeh, 1000.f, -1000.f);
+    
+    shadowSceneData.proj[1][1] *= -1;
+    glm::vec3 scaleVector = glm::vec3(0.5f, 0.5f, 1.f);
+    glm::mat4 scaleMatrix = glm::scale(glm::mat4{ 1.f }, scaleVector);
+    glm::mat4 translateMatrix = glm::translate(glm::mat4{ 1.f }, glm::vec3(0.5f, 0.5f, 0.f));
+
+    
+    shadowSceneData.viewproj = translateMatrix * scaleMatrix * shadowSceneData.proj * shadowSceneData.view;
+
+    
     
     //some default lighting parameters
     // sceneData.ambientColor = glm::vec4(0.3f);
@@ -1695,15 +1791,184 @@ void VulkanEngine::update_scene(){
     // sceneData.sunlightDirection = glm::vec4(0,1,0.5,1.f);
  
 
-    for (int x = -2; x < 4; x++){
-        glm::mat4 scale = glm::scale(glm::vec3{0.2});
-        glm::mat4 translation =  glm::translate(glm::vec3{x, -2, 0});
+    // for (int x = -x c2; x < 4; x++){
+        glm::mat4 scale = glm::scale(glm::vec3{5.0, 0.2, 5.0});
+        glm::mat4 translation =  glm::translate(glm::vec3{0, -2, 0});
 
         loadedNodes["Cube"]->Draw(translation * scale, mainDrawContext);
+        loadedNodes["Cube"]->Draw(translation * scale, lightDrawContext);
 
-    }
+    // }
     glm::mat4 translate = glm::translate(glm::mat4{ 1.f }, glm::vec3(200, 0, 0)); 
-    loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
-    loadedScenes["virtual city"]->Draw(translate, mainDrawContext);
+    // loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
+    // loadedScenes["virtual city"]->Draw(translate, mainDrawContext);
+    // loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, lightDrawContext);
+    // loadedScenes["virtual city"]->Draw(translate, lightDrawContext);
+
 }
  
+void VulkanEngine::init_shadow_map_pipeline(){
+        
+    // VkShaderModule shadowFragShader;
+    // if (!vkutil::load_shader_module("shaders/mesh_phong.frag.spv", engine->_device, &meshFragShader)) {
+    //     fmt::println("Error when building the triangle fragment shader module");
+    // }
+
+
+    fmt::print("initialize shadow began\n");
+    VkShaderModule shadowVertexShader;
+    if (!vkutil::load_shader_module("shaders/shadow_map.vert.spv", _device, &shadowVertexShader)) {
+        fmt::println("Error when building the triangle vertex shader module");
+    }
+
+    
+    VkPushConstantRange matrixRange{};
+    matrixRange.offset = 0;
+    matrixRange.size = sizeof(GPUDrawPushConstants);
+    matrixRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    DescriptorLayoutBuilder builder;
+    builder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    builder.add_binding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    builder.add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+
+    
+
+    // VkDescriptorSetLayout shadowDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT);
+    VkDescriptorSetLayout layouts[] = {_shadowSceneDataDescriptorLayout};
+    
+    VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
+    pipeline_layout_info.pPushConstantRanges = &matrixRange;
+    pipeline_layout_info.pushConstantRangeCount = 1;
+    pipeline_layout_info.pSetLayouts = layouts;
+    pipeline_layout_info.setLayoutCount = 1; 
+
+    VkPipelineLayout newLayout;
+    VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &newLayout));
+    
+    _shadowPipelineLayout = newLayout;
+
+    PipelineBuilder pipelineBuilder;
+    pipelineBuilder._pipelineLayout = newLayout;
+
+    //sending NULL as the fragment shader to set_shaders will cause seg fault.
+    // pipelineBuilder.set_shaders(shadowVertexShader, NULL);
+
+    //manually setting the shaders
+    pipelineBuilder._shaderStages.clear();
+    pipelineBuilder._shaderStages.push_back(
+        vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, shadowVertexShader)
+    );
+
+    pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+    pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+    pipelineBuilder.set_multisampling_none();
+
+    pipelineBuilder.disable_blending();
+    pipelineBuilder.enable_depth_test(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
+    // pipelineBuilder.enable_depth_test(true, VK_COMPARE_OP_LESS_OR_EQUAL);
+    pipelineBuilder.set_depth_format(_lightDepthImage.imageFormat);
+    pipelineBuilder.set_color_attachment_format(VK_FORMAT_UNDEFINED);
+
+    _shadowPipeline = pipelineBuilder.build_pipeline(_device);
+
+    fmt::print("shadow initialization complete\n");
+
+    vkDestroyShaderModule(_device, shadowVertexShader, nullptr);
+}
+
+
+void VulkanEngine::render_shadow_map(VkCommandBuffer cmd){
+
+    std::vector<uint32_t> light_opaque_draws;
+    light_opaque_draws.reserve(lightDrawContext.OpaqueSurfaces.size());
+   
+    // glm::mat4 lightproj = glm::ortho(-(float)(2 * _windowExtent.width), (float)(2 * _windowExtent.width), -(float)(2 * _windowExtent.height), (float)(2 * _windowExtent.height), 10000.f, 0.1f); 
+    // float sizew = (float)_windowExtent.width/2.f;
+    // float sizeh = (float)_windowExtent.height/2.f;
+    // glm::mat4 lightproj = glm::ortho(-sizew, sizew, -sizeh, sizeh, 10000.f, 0.1f);
+    // lightproj[1][1] *= -1;
+
+    for (uint32_t i = 0; i < lightDrawContext.OpaqueSurfaces.size(); i++) {
+        if(is_visible(lightDrawContext.OpaqueSurfaces[i], shadowSceneData.proj * shadowSceneData.view))
+            light_opaque_draws.push_back(i);
+    }
+
+    std::sort(light_opaque_draws.begin(), light_opaque_draws.end(), [&](const auto& iA, const auto& iB) {
+        const RenderObject& A = lightDrawContext.OpaqueSurfaces[iA];
+        const RenderObject& B = lightDrawContext.OpaqueSurfaces[iB];
+        if (A.material == B.material) {
+            return A.indexBuffer < B.indexBuffer;
+        }
+        else {
+            return A.material < B.material;
+        }
+    });
+
+    VkExtent2D lightImageExtent = {
+         _lightDepthImage.imageExtent.width,
+         _lightDepthImage.imageExtent.height
+    };
+    VkRenderingAttachmentInfo lightDepthAttachment = vkinit::depth_attachment_info(_lightDepthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+    VkRenderingInfo shadowRenderInfo = vkinit::rendering_info(lightImageExtent, nullptr, &lightDepthAttachment);
+    shadowRenderInfo.colorAttachmentCount = 0; //rendering_info() sets it to one even if nullptr is being passed
+
+    vkCmdBeginRendering(cmd, &shadowRenderInfo);
+    
+    
+    VkViewport viewport = {};
+    viewport.x = 0;
+    viewport.y = 0;
+    viewport.width = lightImageExtent.width;
+    viewport.height = lightImageExtent.height;
+    viewport.minDepth = 0.f;
+    viewport.maxDepth = 1.f;
+
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor = {};
+    scissor.offset.x = 0;
+    scissor.offset.y = 0;
+    scissor.extent.width = lightImageExtent.width;
+    scissor.extent.height = lightImageExtent.height;
+
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+    AllocatedBuffer gpuSceneDataBuffer = create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+    get_current_frame()._deletionQueue.push_function([=, this]() {
+        destroy_buffer(gpuSceneDataBuffer);
+    });
+
+    GPUSceneData* sceneUniformData = (GPUSceneData*)gpuSceneDataBuffer.allocation->GetMappedData();
+    *sceneUniformData = shadowSceneData;
+    
+    VkDescriptorSet globalDescriptor = get_current_frame()._frameDescriptors.allocate(_device, _shadowSceneDataDescriptorLayout);
+    
+    DescriptorWriter writer;
+    writer.write_buffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    writer.update_set(_device, globalDescriptor);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _shadowPipeline);
+    
+    vkCmdBindDescriptorSets(cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,_shadowPipelineLayout, 0,1, &globalDescriptor,0,nullptr );
+
+    //need a new pipeline.
+
+  
+     for (const RenderObject& draw : lightDrawContext.OpaqueSurfaces) {
+
+         vkCmdBindIndexBuffer(cmd, draw.indexBuffer,0,VK_INDEX_TYPE_UINT32);
+
+         GPUDrawPushConstants pushConstants;
+         pushConstants.vertexBuffer = draw.vertexBufferAddress;
+         pushConstants.worldMatrix = draw.transform;
+         vkCmdPushConstants(cmd,_shadowPipelineLayout,VK_SHADER_STAGE_VERTEX_BIT,0, sizeof(GPUDrawPushConstants), &pushConstants);
+
+         vkCmdDrawIndexed(cmd,draw.indexCount,1,draw.firstIndex,0,0);
+     }
+    
+     vkCmdEndRendering(cmd);
+
+}

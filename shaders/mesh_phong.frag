@@ -7,8 +7,10 @@ layout (location = 0) in vec3 inNormal;
 layout (location = 1) in vec4 inColor;
 layout (location = 2) in vec2 inUV;
 layout (location = 3) in vec3 inPositionWorld;
+layout (location = 4) in vec4 lightview_position;
 
 layout (location = 0) out vec4 outFragColor;
+layout (set = 0, binding = 2) uniform sampler2D shadowMap;
 
 void main(){
     float lightValue = max(dot(inNormal, sceneData.sunlightDirection.xyz), 0.1f);
@@ -29,8 +31,29 @@ void main(){
     vec3 ambientDiffuse= ambient + diffuse;
     vec3 surfaceColor = ambientDiffuse * color.rgb;
     float gamma = 2.2;
+
+    vec3 p = lightview_position.xyz/lightview_position.w;
+
     outFragColor = vec4(surfaceColor + specular, 1.0f);
     outFragColor.rgb = pow(outFragColor.rgb, vec3(1.0/gamma));
+    outFragColor *= texture(shadowMap, p.xy).r > (p.z + 0.0002) ? 0 : 1;
+    float shadow = 0.0;
+    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+
+    // Sample a 3x3 grid around the center pixel
+    for(int x = -1; x <= 1; ++x)
+    {
+        for(int y = -1; y <= 1; ++y)
+        {
+            float pcfDepth = texture(shadowMap, p.xy + vec2(x, y) * texelSize).r;
+       
+            shadow += (pcfDepth > (p.z + 0.0002)) ? 0.0 : 1.0;        
+        }
+    }
+
+    // Average the 9 samples
+    shadow /= 9.0;
+    outFragColor *= shadow;
     
 }
 

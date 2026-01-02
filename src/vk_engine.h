@@ -171,6 +171,7 @@ class VulkanEngine {
 public:
 
 	Camera mainCamera;
+	Camera lightCamera;
 	EngineStats stats;
 	
 	bool _isInitialized{ false };
@@ -227,6 +228,7 @@ public:
 	VmaAllocator _allocator;
 	AllocatedImage _drawImage;
 	AllocatedImage _depthImage;
+	AllocatedImage _lightDepthImage;
 	VkExtent2D _drawExtent;
 	float renderScale = 1.f;
 
@@ -258,6 +260,9 @@ public:
 	VkPipelineLayout _meshPipelineLayout;
 	VkPipeline _meshPipeline;
 
+	VkPipelineLayout _shadowPipelineLayout;
+	VkPipeline _shadowPipeline;
+
 	GPUMeshBuffers rectangle;
 	std::vector<std::shared_ptr<MeshAsset>> testMeshes;
 	
@@ -270,6 +275,9 @@ public:
 	// and data for lighting models
 	GPUSceneData sceneData;
 	VkDescriptorSetLayout _gpuSceneDataDescriptorLayout;
+
+	GPUSceneData shadowSceneData;
+	VkDescriptorSetLayout _shadowSceneDataDescriptorLayout;
 
 	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
@@ -292,6 +300,8 @@ public:
 	GLTFMetallic_Roughness metalRoughMaterial;
 
 	DrawContext mainDrawContext;
+	DrawContext lightDrawContext;
+	
 	std::unordered_map<std::string, std::shared_ptr<Node>> loadedNodes;
 
 	std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> loadedScenes;
@@ -318,4 +328,6 @@ private:
 	void init_mesh_pipeline();
 	void init_default_data();
 	void resize_swapchain();
+	void init_shadow_map_pipeline();
+	void render_shadow_map(VkCommandBuffer cmd);
 };

@@ -9,6 +9,7 @@ layout (location = 0) out vec3 outNormal;
 layout (location = 1) out vec4 outColor;
 layout (location = 2) out vec2 outUV;
 layout (location = 3) out vec3 outPositionWorld;
+layout (location = 4) out vec4 outShadowCoord;
 
 struct Vertex {
 
@@ -17,7 +18,7 @@ struct Vertex {
 	vec3 normal;
 	float uv_y;
 	vec4 color;
-}; 
+};
 
 layout(buffer_reference, std430) readonly buffer VertexBuffer{ 
 	Vertex vertices[];
@@ -43,4 +44,5 @@ void main()
 	outColor = v.color * materialData.colorFactors;	
 	outUV.x = v.uv_x;
 	outUV.y = v.uv_y;
+	outShadowCoord = shadowSceneData.viewproj * PushConstants.render_matrix * position;
 }

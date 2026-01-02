@@ -8,9 +8,9 @@ void Camera::update(){
 
   const Uint8* state = SDL_GetKeyboardState(nullptr);
 
-  velocity.z = (state[SDL_SCANCODE_S] - state[SDL_SCANCODE_W]) * 0.3;
-  velocity.x = (state[SDL_SCANCODE_D] - state[SDL_SCANCODE_A]) * 0.3;
-  velocity.y = (state[SDL_SCANCODE_E] - state[SDL_SCANCODE_Q]) * 0.3;
+  velocity.z = (state[SDL_SCANCODE_S] - state[SDL_SCANCODE_W]) * 0.3f;
+  velocity.x = (state[SDL_SCANCODE_D] - state[SDL_SCANCODE_A]) * 0.3f;
+  velocity.y = (state[SDL_SCANCODE_E] - state[SDL_SCANCODE_Q]) * 0.3f;
 
 } 
 
