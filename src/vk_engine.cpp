@@ -511,6 +511,7 @@ void VulkanEngine::create_swapchain(uint32_t width, uint32_t height){
 		.set_desired_format(VkSurfaceFormatKHR{ .format = _swapchainImageFormat, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR })
 		//use vsync present mode
 		.set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
+		// .set_desired_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
 		.set_desired_extent(width, height)
 		.add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
 		.build()
@@ -1800,10 +1801,10 @@ void VulkanEngine::update_scene(){
 
     // }
     glm::mat4 translate = glm::translate(glm::mat4{ 1.f }, glm::vec3(200, 0, 0)); 
-    // loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
-    // loadedScenes["virtual city"]->Draw(translate, mainDrawContext);
-    // loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, lightDrawContext);
-    // loadedScenes["virtual city"]->Draw(translate, lightDrawContext);
+    loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
+    loadedScenes["virtual city"]->Draw(translate, mainDrawContext);
+    loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, lightDrawContext);
+    loadedScenes["virtual city"]->Draw(translate, lightDrawContext);
 
 }
  
@@ -1862,7 +1863,7 @@ void VulkanEngine::init_shadow_map_pipeline(){
 
     pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
-    pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+    pipelineBuilder.set_cull_mode(VK_CULL_MODE_FRONT_BIT, VK_FRONT_FACE_CLOCKWISE);
     pipelineBuilder.set_multisampling_none();
 
     pipelineBuilder.disable_blending();
