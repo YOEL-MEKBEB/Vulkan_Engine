@@ -12,7 +12,6 @@ bool vkutil::load_shader_module(const char *filepath, VkDevice device, VkShaderM
 
   if (!file.is_open()) {
       return false;
-      fmt::print("hero\n");
   }
 
   // find what the size of the file is by looking up the location of the cursor

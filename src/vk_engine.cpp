@@ -116,6 +116,9 @@ void VulkanEngine::init(){
 
     std::string structurePath = { "assets/structure.glb" };
     std::string cityPath = {"assets/VirtualCity.glb"};
+    std::string donutPath = {"assets/donut.glb"};
+    std::string balloonPath = {"assets/balloon.glb"};
+    std::string blowDartPath = {"assets/aztec_blowgun_and_darts.glb"};
     
     auto structureFile = loadGltf(this,structurePath);
     assert(structureFile.has_value());
@@ -123,10 +126,22 @@ void VulkanEngine::init(){
     auto cityFile = loadGltf(this, cityPath);
     assert(cityFile.has_value());
 
+    auto donutFile = loadGltf(this, donutPath);
+    assert(donutFile.has_value());
+
+    auto balloonFile = loadGltf(this, balloonPath);
+    assert(balloonFile.has_value());
+
+    auto blowDartFile = loadGltf(this, blowDartPath);
+    assert(blowDartFile.has_value());
+    
 
     loadedScenes["structure"] = *structureFile;
     loadedScenes["virtual city"] = *cityFile;
-
+    loadedScenes["donut"] = *donutFile;
+    loadedScenes["balloon"] = *balloonFile;
+    loadedScenes["blowDart"] = *blowDartFile;
+    
     sceneData.ambientColor = glm::vec4(0.1f, 0.1f, 0.2f, 1.0f);
     sceneData.specularColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
     sceneData.sunlightColor = glm::vec4(1.0f, 0.95f, 0.8f, 1.0f);
@@ -534,8 +549,10 @@ void VulkanEngine::init_swapchain(){
     };
 
     VkExtent3D lightImageExtent = {
-        _windowExtent.width,
-        _windowExtent.height,
+        // _windowExtent.width,
+        // _windowExtent.height,
+        1024,
+        1024,
         1
     };
     //hardcoding the draw format to 32 bit float
@@ -1090,7 +1107,17 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
 
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    //allocate a new uniform buffer for the scene data
+    //allocate a new uniform buffer for the scene data.
+    // It will contain all the information about the scene to
+    // be rendered.
+    //
+    // VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT specifies that the
+    // buffer can be used in a VkDescriptorBufferInfo suitable
+    // for occupying a VkDescriptorSet slot either of type
+    //
+    // VMA_MEMORY_USAGE_CPU_TO_GPU specifies that this memory block
+    // will be written by the host (CPU) frequently and will be read
+    // by the device (GPU).
     AllocatedBuffer gpuSceneDataBuffer = create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
     //add it to the deletion queue of this frame so it gets deleted once its been used
@@ -1105,9 +1132,13 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
     });
     
 
-    //write the buffer
+    //Here we obtain the mapped data from the AllocatedBuffer gpuSceneDataBuffer and
+    // set them to the sceneData which was populated in update_Scene().
     GPUSceneData* sceneUniformData = (GPUSceneData*)gpuSceneDataBuffer.allocation->GetMappedData();
     *sceneUniformData = sceneData;
+
+    //We also do the exact same thing for the shadow map rendering because
+    // it uses a different camera and therefore sees different things.
     GPUSceneData* shadowUniformData = (GPUSceneData*)gpuShadowBuffer.allocation->GetMappedData();
     *shadowUniformData = shadowSceneData;
 
@@ -1122,7 +1153,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
     
     
     
-  
+  /////////////////////// Code to draw a rectangle ////////////////////
 
     // vkCmdDraw(cmd, 3, 1, 0, 0);
 
@@ -1137,7 +1168,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
     // vkCmdBindIndexBuffer(cmd, rectangle.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
     // vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
-
+  ////////////////////////////////////////////////////////////////////////
     
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipeline);
 
@@ -1263,6 +1294,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
 
 }
 
+//This function does all of the boilerplate code for creating a buffer.
 AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage){
     // allocate buffer
     VkBufferCreateInfo bufferInfo = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -1274,6 +1306,7 @@ AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags
     VmaAllocationCreateInfo vmaallocInfo = {};
     vmaallocInfo.usage = memoryUsage;
     vmaallocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    
     AllocatedBuffer newBuffer;
 
     // allocate the buffer
@@ -1441,7 +1474,6 @@ void VulkanEngine::init_default_data() {
     });
 
     testMeshes = loadGltfMeshes(this,"assets/basicmesh.glb").value();
-    // testMeshes = loadGltfMeshes(this,"assets/donut.glb").value();
 
     //default textures, white, grey, black. 1 pixel each
     uint32_t white = glm::packUnorm4x8(glm::vec4(1, 1, 1, 1));
@@ -1769,8 +1801,8 @@ void VulkanEngine::update_scene(){
     shadowSceneData.view = glm::lookAt(lightCamera.position, glm::vec3(0,0,0), glm::vec3(0,1,0));
     
     // shadowSceneData.proj = glm::ortho(-(float)(2 * _windowExtent.width), (float)(2 * _windowExtent.width), -(float)(2 * _windowExtent.height), (float)(2 * _windowExtent.height), 10000.f, 0.1f); 
-    float sizew = 20.f;
-    float sizeh = 20.f;
+    float sizew = 10.f;
+    float sizeh = 10.f;
     // float sizew = (float)_windowExtent.width/2.f;
     // float sizeh = (float)_windowExtent.height/2.f;
     // shadowSceneData.proj = glm::ortho(-sizew, sizew, -sizeh, sizeh, 10000.f, 0.1f);
@@ -1792,20 +1824,40 @@ void VulkanEngine::update_scene(){
     // sceneData.sunlightDirection = glm::vec4(0,1,0.5,1.f);
  
 
-    // for (int x = -x c2; x < 4; x++){
+    // for (int x = -2; x < 4; x++){
         glm::mat4 scale = glm::scale(glm::vec3{5.0, 0.2, 5.0});
         glm::mat4 translation =  glm::translate(glm::vec3{0, -2, 0});
 
         loadedNodes["Cube"]->Draw(translation * scale, mainDrawContext);
         loadedNodes["Cube"]->Draw(translation * scale, lightDrawContext);
+        
 
     // }
+    scale = glm::scale(glm::vec3{0.01, 0.01, 0.01});
+    for (int x = -2; x < 4; x++){
+        translation =  glm::translate(glm::vec3{x, -3, 3});
+
+        loadedScenes["balloon"]->Draw(translation * scale, mainDrawContext);
+        loadedScenes["balloon"]->Draw(translation * scale, lightDrawContext);
+   
+    }
+    // translation = glm::translate(glm::vec3(0.2, -0.9, 1));
+    // // loadedNodes["blowgun HUD_blowgunHUD_0"]->Draw(translation * scale, mainDrawContext);
+    // // loadedNodes["blowgun HUD_blowgunHUD_0"]->Draw(translation * scale, lightDrawContext);
+    // loadedScenes["blowDart"]->topNodes[0]->children[1]->Draw(translation, mainDrawContext);
+    // loadedScenes["blowDart"]->Draw(translation, mainDrawContext);
+    
     glm::mat4 translate = glm::translate(glm::mat4{ 1.f }, glm::vec3(200, 0, 0)); 
+    glm::mat4 smallTranslate = glm::translate(glm::mat4{ 1.f }, glm::vec3(1, -1.5, 0)); 
+    scale = glm::scale(glm::vec3{5.0, 5.0, 5.0});
     loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
+
     loadedScenes["virtual city"]->Draw(translate, mainDrawContext);
+    loadedScenes["donut"]->Draw(smallTranslate * scale, mainDrawContext);
+    
     loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, lightDrawContext);
     loadedScenes["virtual city"]->Draw(translate, lightDrawContext);
-
+    loadedScenes["donut"]->Draw(smallTranslate * scale, lightDrawContext);
 }
  
 void VulkanEngine::init_shadow_map_pipeline(){

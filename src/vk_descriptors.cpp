@@ -103,7 +103,7 @@ VkDescriptorPool DescriptorAllocatorGrowable::get_pool(VkDevice device){
     newPool = readyPools.back();
     readyPools.pop_back();
   }else{
-    newPool = create_pool(device, 1, ratios);
+    newPool = create_pool(device, setsPerPool, ratios);
 
     setsPerPool = setsPerPool * 1.5;
 	    if (setsPerPool > 4092) {
