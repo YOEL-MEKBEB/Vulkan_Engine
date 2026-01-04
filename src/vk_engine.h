@@ -139,6 +139,8 @@ struct GLTFMetallic_Roughness {
 		VkSampler metalRoughSampler;
 		VkBuffer dataBuffer;
 		uint32_t dataBufferOffset;
+		AllocatedImage normalImage;
+		VkSampler normalSampler;
 	};
 
 	DescriptorWriter writer;
@@ -172,6 +174,8 @@ struct RenderObject {
     glm::mat4 transform;
     VkDeviceAddress vertexBufferAddress;
 };
+
+
 
 
 //Contains all of the renderObjects in the scene

@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <sys/_types/_u_int32_t.h>
 #include <vk_initializers.h>
 #include <vk_types.h>
 #include "vk_descriptors.h"
@@ -25,6 +26,8 @@
 #include <glm/gtx/transform.hpp>
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
+
+#include <stb_image.h>
 
 VulkanEngine* loadedEngine = nullptr;
 
@@ -1512,6 +1515,35 @@ void VulkanEngine::init_default_data() {
     sample.minFilter = VK_FILTER_LINEAR;
     vkCreateSampler(_device, &sample, nullptr, &_defaultSamplerLinear);
 
+    GLTFMetallic_Roughness::MaterialResources materialResources;
+    //default the material textures
+    int width, height, channels;
+    AllocatedImage _gravelImage;
+    AllocatedImage _gravelRoughness;
+    AllocatedImage _gravelNormal;
+    
+    // std::string gravelPath = {};
+    ////////loading default textures for normal mapping
+    unsigned char* data = stbi_load("assets/Gravel_001_BaseColor.jpg", &width, &height, &channels, 4);
+    VkExtent3D size = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
+    
+    _gravelImage = create_image(data, size, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+
+    stbi_image_free(data);
+
+    data = stbi_load("assets/Gravel_001_Roughness.jpg", &width, &height, &channels, 4);
+    size = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
+
+    _gravelRoughness = create_image(data, size, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+    stbi_image_free(data);
+
+    data = stbi_load("assets/Gravel_001_Normal.jpg", &width, &height, &channels, 4);
+    size = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
+
+    _gravelNormal = create_image(data, size, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+    stbi_image_free(data);
+    
+    /////////
     _mainDeletionQueue.push_function([&](){
         vkDestroySampler(_device,_defaultSamplerNearest,nullptr);
         vkDestroySampler(_device,_defaultSamplerLinear,nullptr);
@@ -1520,14 +1552,17 @@ void VulkanEngine::init_default_data() {
         destroy_image(_greyImage);
         destroy_image(_blackImage);
         destroy_image(_errorCheckerboardImage);
+        destroy_image(_gravelImage);
+        destroy_image(_gravelRoughness);
+        destroy_image(_gravelNormal);
     });
-
-    GLTFMetallic_Roughness::MaterialResources materialResources;
-    //default the material textures
-    materialResources.colorImage = _whiteImage;
+    
+    materialResources.colorImage = _gravelImage;
     materialResources.colorSampler = _defaultSamplerLinear;
-    materialResources.metalRoughImage = _whiteImage;
+    materialResources.metalRoughImage = _gravelRoughness;
     materialResources.metalRoughSampler = _defaultSamplerLinear;
+    materialResources.normalImage = _gravelNormal;
+    materialResources.normalSampler = _defaultSamplerLinear;
 
     //set the uniform buffer for the material data
     AllocatedBuffer materialConstants = create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -1656,12 +1691,12 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine){
     //     fmt::println("Error when building the triangle vertex shader module");
     // }
     VkShaderModule meshFragShader;
-    if (!vkutil::load_shader_module("shaders/mesh_phong.frag.spv", engine->_device, &meshFragShader)) {
+    if (!vkutil::load_shader_module("shaders/mesh_normal.frag.spv", engine->_device, &meshFragShader)) {
         fmt::println("Error when building the triangle fragment shader module\n");
     }
 
     VkShaderModule meshVertexShader;
-    if (!vkutil::load_shader_module("shaders/mesh_phong.vert.spv", engine->_device, &meshVertexShader)) {
+    if (!vkutil::load_shader_module("shaders/mesh_normal.vert.spv", engine->_device, &meshVertexShader)) {
         fmt::println("Error when building the triangle vertex shader module\n");
     }
 
@@ -1674,6 +1709,7 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine){
     builder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     builder.add_binding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     builder.add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    builder.add_binding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
     materialLayout = builder.build(engine->_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
     VkDescriptorSetLayout layouts[] = { engine->_gpuSceneDataDescriptorLayout, materialLayout };
@@ -1730,6 +1766,7 @@ MaterialInstance GLTFMetallic_Roughness::write_material(VkDevice device, Materia
     writer.write_buffer(0, resources.dataBuffer, sizeof(MaterialConstants), resources.dataBufferOffset, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     writer.write_image(1, resources.colorImage.imageView, resources.colorSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.write_image(2, resources.metalRoughImage.imageView, resources.metalRoughSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    writer.write_image(3, resources.normalImage.imageView, resources.normalSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
     writer.update_set(device, matData.materialSet);
 

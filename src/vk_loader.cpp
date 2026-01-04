@@ -510,19 +510,19 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::f
                     });
             }
             
-            // //load the tangent vectors
-            // auto tangent = p.findAttribute("TANGENT");
-            // if(tangent != p.attributes.end()){
-            //     fastgltf::iterateAccessorWithIndex<glm::vec4>(gltf, gltf.accessors[tangent->accessorIndex],
-            //         [&](glm::vec4 v, size_t index){
-            //             vertices[initial_vtx + index].tangent = v;
-            //          });
-            // }else{
-            //     //set dummy tangent vectors when no tangent has been found.
-            //     for(size_t i = 0; i < newSurface.count; i++){
-            //         vertices[initial_vtx + i].tangent = glm::vec4(0.f, 0.f, 0.f, 0.f);
-            //     }
-            // }
+            //load the tangent vectors
+            auto tangent = p.findAttribute("TANGENT");
+            if(tangent != p.attributes.end()){
+                fastgltf::iterateAccessorWithIndex<glm::vec4>(gltf, gltf.accessors[tangent->accessorIndex],
+                    [&](glm::vec4 v, size_t index){
+                        vertices[initial_vtx + index].tangent = v;
+                     });
+            }else{
+                //set dummy tangent vectors when no tangent has been found.
+                for(size_t i = 0; i < vertices.size() - initial_vtx ; i++){
+                    vertices[initial_vtx + i].tangent = glm::vec4(0.f, 0.f, 0.f, 0.f);
+                }
+            }
 
             if (p.materialIndex.has_value()) {
                 newSurface.material = materials[p.materialIndex.value()];
