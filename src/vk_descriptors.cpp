@@ -23,6 +23,7 @@ VkDescriptorSetLayout DescriptorLayoutBuilder::build(VkDevice device, VkShaderSt
 
   //this has to be auto& otherwise it will modify a copy and send in the original.
   for(auto& b : bindings){
+    // accumulating the stage flags
     b.stageFlags |= shaderStages; 
   }
 

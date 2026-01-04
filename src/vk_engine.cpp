@@ -34,7 +34,7 @@ VulkanEngine& VulkanEngine::Get() { return *loadedEngine; }
 
 constexpr bool bUseValidationLayers = false; //set this to true if debugging
 
-//checks if the mesh is within the viewing frustrum.x It's frustrum culling.
+//checks if the mesh is within the viewing frustum. It's frustum culling.
 bool is_visible(const RenderObject& obj, const glm::mat4& viewproj) {
     std::array<glm::vec3, 8> corners {
         glm::vec3 { 1, 1, 1 },
@@ -102,18 +102,15 @@ void VulkanEngine::init(){
     // everything went fine
     _isInitialized = true;
 
+    /////////Initialize main camera////////////
     mainCamera.velocity = glm::vec3(0.f);
     mainCamera.position = glm::vec3(0, 0, 10);
     // mainCamera.position = glm::vec3(30.f, 1.f, 5.f);
-
     mainCamera.pitch = 0;
     mainCamera.yaw = 0;
-    
-    lightCamera.velocity = glm::vec3(0.f);
-    // lightCamera.position = glm::vec3(0, 0, 5);
-    lightCamera.pitch = 0;
-    lightCamera.yaw = 0;
+    ///////////////////////
 
+    /////////////////Load the scene data////////////////
     std::string structurePath = { "assets/structure.glb" };
     std::string cityPath = {"assets/VirtualCity.glb"};
     std::string donutPath = {"assets/donut.glb"};
@@ -141,18 +138,26 @@ void VulkanEngine::init(){
     loadedScenes["donut"] = *donutFile;
     loadedScenes["balloon"] = *balloonFile;
     loadedScenes["blowDart"] = *blowDartFile;
+    /////////////////////////////////
     
+    ////////////////// initialize lighting parameters for blinn-phong illumination models
     sceneData.ambientColor = glm::vec4(0.1f, 0.1f, 0.2f, 1.0f);
     sceneData.specularColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
     sceneData.sunlightColor = glm::vec4(1.0f, 0.95f, 0.8f, 1.0f);
     sceneData.sunlightDirection = glm::vec4(0,1,0.5,1.f);
     sceneData.shininess = 100;
+    ////////////////////////////////////////////////////
 
+    /////////Initialize light camera////////////
+    lightCamera.velocity = glm::vec3(0.f);
     lightCamera.position = 100.f * sceneData.sunlightDirection;
+    lightCamera.pitch = 0;
+    lightCamera.yaw = 0;
+    ///////////////////////////////////////
 }
 
 //the dependencies must be destroyed in the following order
-// CommandPool -> Swapchain -> Surface -> Instance -> SDL_window
+// loadedScenes -> CommandPool -> Swapchain -> Surface -> Instance -> SDL_window
 // Device doesn't get destroyed because it's just a handle to the GPU.
 void VulkanEngine::cleanup(){
     if (_isInitialized) {
@@ -190,7 +195,7 @@ void VulkanEngine::cleanup(){
     loadedEngine = nullptr;
 }
 
-
+//main rendering function to display an image on to the screen
 void VulkanEngine::draw(){
 
     //sets the parameters for updating the scenes.
@@ -302,6 +307,7 @@ void VulkanEngine::draw(){
 
 }
 
+// main compute shader drawing function for the background
 void VulkanEngine::draw_background(VkCommandBuffer cmd){
     
 
@@ -334,12 +340,10 @@ void VulkanEngine::draw_background(VkCommandBuffer cmd){
     vkCmdPushConstants(cmd, _gradientPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstant), &effect.data);
     // execute the compute pipeline dispatch. We are using 16x16 workgroup size so we need to divide by it
     vkCmdDispatch(cmd, std::ceil(_drawExtent.width / 16.0), std::ceil(_drawExtent.height / 16.0), 1);
-    // fmt::print("{} {}", _drawExtent.width, _drawExtent.height);
-
     
 }
 
-
+// the while 0 loop of the engine. Everything that needs to run in a loop goes here
 void VulkanEngine::run(){
 // 	typedef struct SDL_KeyboardEvent
 // {
@@ -549,13 +553,11 @@ void VulkanEngine::init_swapchain(){
     };
 
     VkExtent3D lightImageExtent = {
-        // _windowExtent.width,
-        // _windowExtent.height,
         1024,
         1024,
         1
     };
-    //hardcoding the draw format to 32 bit float
+    //hardcoding the draw format to 64 bit float
     _drawImage.imageFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
     _drawImage.imageExtent = drawImageExtent;
 
@@ -1798,9 +1800,11 @@ void VulkanEngine::update_scene(){
     sceneData.proj[1][1] *= -1;
     sceneData.viewproj = sceneData.proj * sceneData.view;
 
-    shadowSceneData.view = glm::lookAt(lightCamera.position, glm::vec3(0,0,0), glm::vec3(0,1,0));
+    shadowSceneData.view = glm::lookAt(lightCamera.position, glm::vec3(0.f,0.f,0.f), glm::vec3(0.f,1.f,0.f));
     
-    // shadowSceneData.proj = glm::ortho(-(float)(2 * _windowExtent.width), (float)(2 * _windowExtent.width), -(float)(2 * _windowExtent.height), (float)(2 * _windowExtent.height), 10000.f, 0.1f); 
+    //temporary hardcoded variables for projection size.
+    // Cascading shadow map will be implemented in the future to
+    // accomodate for larger scenes.
     float sizew = 10.f;
     float sizeh = 10.f;
     // float sizew = (float)_windowExtent.width/2.f;
@@ -1842,8 +1846,8 @@ void VulkanEngine::update_scene(){
    
     }
     // translation = glm::translate(glm::vec3(0.2, -0.9, 1));
-    // // loadedNodes["blowgun HUD_blowgunHUD_0"]->Draw(translation * scale, mainDrawContext);
-    // // loadedNodes["blowgun HUD_blowgunHUD_0"]->Draw(translation * scale, lightDrawContext);
+    // loadedNodes["blowgun HUD_blowgunHUD_0"]->Draw(translation * scale, mainDrawContext);
+    // loadedNodes["blowgun HUD_blowgunHUD_0"]->Draw(translation * scale, lightDrawContext);
     // loadedScenes["blowDart"]->topNodes[0]->children[1]->Draw(translation, mainDrawContext);
     // loadedScenes["blowDart"]->Draw(translation, mainDrawContext);
     

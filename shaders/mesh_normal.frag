@@ -20,7 +20,7 @@ void main(){
     vec3 nTangent = texture(normalTex, inUV).rgb;
     nTangent = normalize(nTangent * 2.0 - 1.0);
 
-    float lightValue = max(dot(nTangent, sceneData.sunlightDirection.xyz), 0.1f);
+    float lightValue = max(dot(nTangent, lightDirectionTangent.xyz), 0.1f);
 
     vec3 viewDir = normalize(cameraPositionTangent.xyz - inPositionTangent.xyz);
     

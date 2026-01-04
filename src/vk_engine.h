@@ -13,6 +13,8 @@
 #include <vk_loader.h>
 #include <camera.h>
 
+// All of the stats for debugging and displaying
+// on the screen using ImGui
 struct EngineStats{
 	float frametime;
 	int triangle_count;
@@ -21,6 +23,9 @@ struct EngineStats{
 	float mesh_draw_time;
 };
 
+//This.... This is amazing. All you have to do
+// is put in a lambda function that contains
+// the deleter of the data structure.
 struct DeletionQueue{
 	std::deque<std::function<void()>> deleters;
 
@@ -37,10 +42,10 @@ struct DeletionQueue{
 
 };
 
-struct ComputePushConstantOriginal{
-	float inColorX;
-	float inColorY;
-};
+// struct ComputePushConstantOriginal{
+// 	float inColorX;
+// 	float inColorY;
+// };
 
 struct ComputePushConstant{
 	glm::vec4 data1;
@@ -87,7 +92,7 @@ struct FrameData{
 
 	//All commands for GPU get recorded in a VkCommandBuffer.
 	// All of the functions that will execute GPU work won’t do anything
-	// until the command buffer is submitted to the GPU through a VkQueueSubmit call.
+	// until the command buffer is submitted to the GPU through a vkQueueSubmit call.
 	VkCommandBuffer _mainCommandBuffer;
 
 	//VkSemaphores handle resource management purely in the GPU. They make sure
@@ -110,6 +115,10 @@ struct FrameData{
 };
 
 
+//A struct that contains all of the properties 
+// in a GLTF file. At the moment, the metal
+// and rough factors are not being used and will be
+// used once PBR is implemented.
 struct GLTFMetallic_Roughness {
 	MaterialPipeline opaquePipeline;
 	MaterialPipeline transparentPipeline;
@@ -147,7 +156,12 @@ struct MeshNode : public Node{
 	virtual void Draw(const glm::mat4& topMatrix, DrawContext& ctx) override;
 };
 
-
+//The object to be rendered.
+// Contains the index Buffer, the material associated
+// with it. The bounds for frustum culling
+//
+// The transform and vertexBufferAddress are dynamic data
+// that will passed as push constants to the vertex shader.
 struct RenderObject {
     uint32_t indexCount;
     uint32_t firstIndex;
@@ -160,18 +174,35 @@ struct RenderObject {
 };
 
 
+//Contains all of the renderObjects in the scene
+// It divides them into Opaque and transparent
+// surfaces. The division is important because
+// the Opaque surfaces will have different depth testing
+// methods than the transparent surfaces. This means that
+// they will pass through different pipelines since depth
+// testing is hardcoded into the pipeline.
 struct DrawContext{
 	std::vector<RenderObject> OpaqueSurfaces;
 	std::vector<RenderObject> TransparentSurfaces;
 };
 
+//variable used for determining whether the
+// rendering is single/double/triple buffered.
 constexpr unsigned int FRAME_OVERLAP = 2;
 
+//The main class, where everything happens.
 class VulkanEngine {
 public:
 
+	// main camera for rendering the scene on to
+	// the screen
 	Camera mainCamera;
+
+	// camera for rendering a shadow map texture
+	// to create shadows in the final scene.
 	Camera lightCamera;
+
+	
 	EngineStats stats;
 	
 	bool _isInitialized{ false };
@@ -182,12 +213,15 @@ public:
 	
 	bool stop_rendering{ false };
 
+	/////////////// Window management varaibles/////
 	VkExtent2D _windowExtent{ 1700 , 900 };
 
 	struct SDL_Window* _window{ nullptr };
 
 	static VulkanEngine& Get();
+	///////////////////////////////////////////////
 
+	///////////////main functions/////////////
 	//initializes everything in the engine
 	void init();
 
@@ -199,14 +233,19 @@ public:
 
 	//run main loop
 	void run();
-	
+	/////////////////////////////////////////
+
+
+	/////////////////////// Vulkan initialization variables/////////////
 	VkInstance _instance; // The connection to the Vulkan library/loader
 	VkDebugUtilsMessengerEXT _debug_messenger; // Handle for capturing debug/validation messages
 	VkPhysicalDevice _chosenGPU; // Handle to the actual physical hardware (GPU)
 	VkDevice _device; // The logical interface used to command the GPU
 	VkSurfaceKHR _surface; // The abstraction of the OS window to render into
+	///////////////////////////////////////////////////////////////////
 
-	//swapchain variables
+	
+	//////////////////swapchain variables////////////////
 	VkSwapchainKHR _swapchain;
 	VkFormat _swapchainImageFormat;
 
@@ -214,74 +253,96 @@ public:
 	std::vector<VkImage> _swapchainImages;
 	std::vector<VkImageView> _swapchainImageViews;
 	VkExtent2D _swapchainExtent;
-
+	///////////////////////////////////////////////////////////////////
+	
+	///////////////////Frames Data variables///////
 	//data held by each frame and the queue to submit to.
 	FrameData _frames[FRAME_OVERLAP];
 	FrameData& get_current_frame(){ return _frames[_frameNumber % FRAME_OVERLAP]; }
 	VkQueue _graphicsQueue;
 	uint32_t _graphicsQueueFamily;
+	//////////////////////////////////////////////
+
 
 	//data structure for deleting stuff;
 	DeletionQueue _mainDeletionQueue;
 
+	//////////////////////Image Allocation variables////////////////
 	//data structure for allocating custom made image.
 	VmaAllocator _allocator;
-	AllocatedImage _drawImage;
-	AllocatedImage _depthImage;
-	AllocatedImage _lightDepthImage;
+	AllocatedImage _drawImage; //main image
+	AllocatedImage _depthImage; //depth testing image
+	AllocatedImage _lightDepthImage; //shadow map image
 	VkExtent2D _drawExtent;
+	////////////////////////////////////////////////////////
+
+	
 	float renderScale = 1.f;
 
+
+	/////////////////////Descriptor Set variables/////////////
 	DescriptorAllocatorGrowable globalDescriptorAllocator;
 
 	VkDescriptorSet _drawImageDescriptors;
 	VkDescriptorSetLayout _drawImageDescriptorLayout;
+	////////////////////////////////////////////////////////
+	
 
+	////////////////////Compute Shader////////////////
+	//// This is for the gradient background in the compute shader
 	VkPipeline _gradientPipeline;
 	VkPipelineLayout _gradientPipelineLayout;
-	ComputePushConstantOriginal _breathColorPushConst;
-
+	// ComputePushConstantOriginal _breathColorPushConst;
+	//The vector allows for swappable backgrounds in the
+	// compute shader
 	std::vector<ComputeEffect> backgroundEffects;
 	int currentBackgroundEffect{0};
+	////////////////////////////////////////////////
 
-	//immediate submit structure
+
+	////////////////Immediate submit////////////////
+	//immediate submit structures.
 	VkFence _imFence;
 	VkCommandBuffer _imCommandBuffer;
 	VkCommandPool _imCommandPool;
-
+	// Immediate submit is used to force synchronous work in an asynchronous system
+	// For example, sending a vertex/index buffer or an image buffer to the GPU.
+	// We don't want to be rendering stuff that has not been properly staged yet.
 	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
+	/////////////////////////////////////////////////
 
-	//triangle pipelines finally. ;)
+	//triangle pipelines finally. ;)////////////////////////
 	VkPipelineLayout _trianglePipelineLayout;
 	VkPipeline _trianglePipeline;
-
 	void init_triangle_pipeline();
-
+	///////////////////////////////////////////////
+	
+	////////////Mesh pipeline and scene Data//////////////////
 	VkPipelineLayout _meshPipelineLayout;
 	VkPipeline _meshPipeline;
-
-	VkPipelineLayout _shadowPipelineLayout;
-	VkPipeline _shadowPipeline;
-
-	GPUMeshBuffers rectangle;
-	std::vector<std::shared_ptr<MeshAsset>> testMeshes;
-	std::vector<std::shared_ptr<MeshAsset>> blowGunMesh;
-	
-
-	GPUMeshBuffers upload_mesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
-
-	//Functions to Create and destroy the buffers.
-	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
-	void destroy_buffer(const AllocatedBuffer& buffer);
-
 	//contains all of the view and projections matrices
 	// and data for lighting models
 	GPUSceneData sceneData;
 	VkDescriptorSetLayout _gpuSceneDataDescriptorLayout;
+	///////////////////////////////////////////////
 
+	/////////////Shadow map pipeline and scene Data/////////////////
+	VkPipelineLayout _shadowPipelineLayout;
+	VkPipeline _shadowPipeline;
 	GPUSceneData shadowSceneData;
 	VkDescriptorSetLayout _shadowSceneDataDescriptorLayout;
+	//////////////////////////////////////////////
+	
+	//////////////// Buffers /////////////////////
+	GPUMeshBuffers rectangle;
+	std::vector<std::shared_ptr<MeshAsset>> testMeshes;
+	GPUMeshBuffers upload_mesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
+	//Functions to Create and destroy the buffers.
+	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+	void destroy_buffer(const AllocatedBuffer& buffer);
+	////////////////////////////////////////////////
 
+	//////////////// Images /////////////////////////
 	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 	void destroy_image(const AllocatedImage& img);
@@ -292,45 +353,44 @@ public:
 	AllocatedImage _greyImage;
 	AllocatedImage _errorCheckerboardImage;
 
-  VkSampler _defaultSamplerLinear;
-	VkSampler _defaultSamplerNearest;
+  VkSampler _defaultSamplerLinear;  // linear interpolation sampling
+	VkSampler _defaultSamplerNearest; // nearest neighbors sampling
 
 	//descriptor set layout for textures
 	VkDescriptorSetLayout _singleImageDescriptorLayout;
+	//////////////////////////////////////////////
 
-	//materials
+	/////////////////////materials///////////////
 	MaterialInstance defaultData;
 	GLTFMetallic_Roughness metalRoughMaterial;
+	/////////////////////////////////////////////
 
-	DrawContext mainDrawContext;
-	DrawContext lightDrawContext;
+	DrawContext mainDrawContext;  // final draw context
+	DrawContext lightDrawContext; // draw context for shadow mapping
 	
+	////////////loaded meshes and scenes from GLTF files/////////////
 	std::unordered_map<std::string, std::shared_ptr<Node>> loadedNodes;
-
 	std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> loadedScenes;
-
-
 	void update_scene();
-
-
+	////////////////////////////////////////////////////////////////
 
 private:
-	void init_vulkan();
-	void init_swapchain();
-	void init_commands();
-	void init_sync_structures();
-	void create_swapchain(uint32_t width, uint32_t height);
+	void init_vulkan(); //initialize the vulkan instance
+	void init_swapchain(); //initialize the swapchain variables
+	void init_commands(); // initialize the command buffers
+	void init_sync_structures(); // initialize the fences and semaphores
+	void create_swapchain(uint32_t width, uint32_t height); // create swapchain images
+	void resize_swapchain(); 
 	void destroy_swapchain();
-	void draw_background(VkCommandBuffer cmd);
-	void draw_geometry(VkCommandBuffer cmd);
-	void init_descriptors();
-	void init_pipelines();
-	void init_background_pipelines();
-	void init_imgui();
+	void draw_background(VkCommandBuffer cmd); //draws the background using a compute shader
+	void draw_geometry(VkCommandBuffer cmd); //draws loadedNodes and loadedScenes
+	void init_descriptors(); //initialize the descriptor sets
+	void init_pipelines(); //calls all the pipeline initialization function
+	void init_background_pipelines(); //initialize the compute shader pipeline
+	void init_shadow_map_pipeline(); // initializes the shadow maps rendering pipeline
+	void init_mesh_pipeline(); //initialize the mesh pipelines
+	void init_imgui(); 
 	void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
-	void init_mesh_pipeline();
-	void init_default_data();
-	void resize_swapchain();
-	void init_shadow_map_pipeline();
+	void init_default_data(); //set the default data for textures and transformations
 	void render_shadow_map(VkCommandBuffer cmd);
 };
