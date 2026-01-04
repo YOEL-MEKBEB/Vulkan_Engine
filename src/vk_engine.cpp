@@ -1806,7 +1806,7 @@ void VulkanEngine::update_scene(){
     // float sizew = (float)_windowExtent.width/2.f;
     // float sizeh = (float)_windowExtent.height/2.f;
     // shadowSceneData.proj = glm::ortho(-sizew, sizew, -sizeh, sizeh, 10000.f, 0.1f);
-    shadowSceneData.proj = glm::ortho(-sizew, sizew, -sizeh, sizeh, 1000.f, -1000.f);
+    shadowSceneData.proj = glm::ortho(-sizew, sizew, -sizeh, sizeh, 1000.f, 0.1f);
     
     shadowSceneData.proj[1][1] *= -1;
     glm::vec3 scaleVector = glm::vec3(0.5f, 0.5f, 1.f);

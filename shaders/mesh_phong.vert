@@ -39,6 +39,7 @@ void main()
 	
 
 	gl_Position =  sceneData.viewproj * PushConstants.render_matrix *position;
+	outPositionWorld = (PushConstants.render_matrix * position).xyz;
 
 	outNormal = normalize((PushConstants.render_matrix * vec4(v.normal, 0.f)).xyz);
 	outColor = v.color * materialData.colorFactors;	
