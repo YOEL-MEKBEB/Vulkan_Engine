@@ -211,9 +211,9 @@ void DescriptorWriter::write_buffer(int binding,VkBuffer buffer,size_t size, siz
 }
 void DescriptorWriter::write_image(int binding,VkImageView image,VkSampler sampler , VkImageLayout layout, VkDescriptorType type){
   VkDescriptorImageInfo& info = imageInfos.emplace_back(VkDescriptorImageInfo{
+                                                         .sampler = sampler,
                                                          .imageView = image,
-                                                         .imageLayout = layout,
-                                                         .sampler = sampler
+                                                         .imageLayout = layout
                                                        });
   VkWriteDescriptorSet write = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
   write.dstBinding = binding;

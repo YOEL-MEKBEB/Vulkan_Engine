@@ -6,7 +6,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <sys/_types/_u_int32_t.h>
+//#include <sys/_types/_u_int32_t.h>
+#include <cstdint>
 #include <vk_initializers.h>
 #include <vk_types.h>
 #include "vk_descriptors.h"
