@@ -173,6 +173,8 @@ struct RenderObject {
 		Bounds bounds;
     glm::mat4 transform;
     VkDeviceAddress vertexBufferAddress;
+
+    int useNormal = 0; //only do normal mapping for objects that have a normal texture.
 };
 
 
@@ -377,6 +379,11 @@ public:
 	std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> loadedScenes;
 	void update_scene();
 	////////////////////////////////////////////////////////////////
+
+	
+  AllocatedImage _gravelImage;
+  AllocatedImage _gravelRoughness;
+  AllocatedImage _gravelNormal;
 
 private:
 	void init_vulkan(); //initialize the vulkan instance

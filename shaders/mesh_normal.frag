@@ -1,6 +1,7 @@
 #version 450
 
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_buffer_reference : require
 #include "input_structures.glsl"
 
 layout (location = 0) in vec3 inNormal;
@@ -11,14 +12,26 @@ layout (location = 4) in vec4 lightview_position;
 layout (location = 5) in vec4 inPositionTangent;
 layout (location = 6) in vec4 cameraPositionTangent;
 layout (location = 7) in vec4 lightDirectionTangent;
+layout (location = 8) in flat int useSceneNormal; //the flat keyworkd signifies no interpolation
 
 layout (location = 0) out vec4 outFragColor;
 layout (set = 0, binding = 2) uniform sampler2D shadowMap;
 
+layout( push_constant ) uniform constants
+{
+	// int useNormal;
+	layout (offset = 72) int useNormal;
+} PushConstants;
+
 
 void main(){
-    vec3 nTangent = texture(normalTex, inUV).rgb;
-    nTangent = normalize(nTangent * 2.0 - 1.0);
+    vec3 nTangent;
+    if(PushConstants.useNormal == 0 && useSceneNormal == 0){
+        nTangent = vec3(0, 0, 1);
+    }else{
+        nTangent = texture(normalTex, inUV).rgb;
+        nTangent = normalize(nTangent * 2.0 - 1.0);
+    }
 
     float lightValue = max(dot(nTangent, lightDirectionTangent.xyz), 0.1f);
 
@@ -60,6 +73,6 @@ void main(){
     vec3 finalColor = (ambient * color.rgb + diffuse * shadow * color.rgb + specular * shadow);
     outFragColor = vec4(finalColor, 1.0f);
     outFragColor.rgb = pow(outFragColor.rgb, vec3(1.0/gamma));
-    
+   
 }
 

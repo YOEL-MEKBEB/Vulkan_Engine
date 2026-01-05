@@ -54,7 +54,7 @@ struct Vertex {
 	glm::vec3 normal;
 	float uv_y;
 	glm::vec4 color;
-	glm::vec4 tangent;
+	glm::vec4 tangent = glm::vec4(0.f, 0.f, 0.f, 0.f);
 };
 
 // holds the resources needed for a mesh
@@ -138,6 +138,8 @@ struct Node : public IRenderable {
 
     glm::mat4 localTransform;
     glm::mat4 worldTransform;
+
+    int useNormal = 0;
 
     //recursive propagation of transforming an object and it's children
     void refreshTransform(const glm::mat4& parentMatrix)

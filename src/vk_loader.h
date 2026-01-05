@@ -106,6 +106,7 @@ public:
     AllocatedBuffer materialDataBuffer;
 
     VulkanEngine* creator;
+    int useNormal;
 
     ~LoadedGLTF();
 

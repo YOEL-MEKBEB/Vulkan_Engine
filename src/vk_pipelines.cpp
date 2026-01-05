@@ -181,7 +181,7 @@ void PipelineBuilder::disable_blending(){
 void PipelineBuilder::set_color_attachment_format(VkFormat format){
     _colorAttachmentformat = format;
     // connect the format to the renderInfo  structure
-    _renderInfo.colorAttachmentCount = 1;
+    _renderInfo.colorAttachmentCount = format == VK_FORMAT_UNDEFINED ? 0 : 1;
     _renderInfo.pColorAttachmentFormats = &_colorAttachmentformat;
 }
 

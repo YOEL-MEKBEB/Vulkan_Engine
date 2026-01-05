@@ -35,7 +35,7 @@ VulkanEngine* loadedEngine = nullptr;
 VulkanEngine& VulkanEngine::Get() { return *loadedEngine; }
 
 
-constexpr bool bUseValidationLayers = false; //set this to true if debugging
+constexpr bool bUseValidationLayers = true; //set this to true if debugging
 
 //checks if the mesh is within the viewing frustum. It's frustum culling.
 bool is_visible(const RenderObject& obj, const glm::mat4& viewproj) {
@@ -252,7 +252,35 @@ void VulkanEngine::draw(){
     //changing it into a readable texture for draw_geometry
     vkutil::transition_image(cmd, _lightDepthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
     render_shadow_map(cmd);
-    vkutil::transition_image(cmd, _lightDepthImage.image, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    // vkutil::transition_image(cmd, _lightDepthImage.image, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    /// manual transition because the transition image function will convert to VK_IMAGE_ASPECT_COLOR_BIT
+    // if newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    // TODO: MODIFY transition image.
+    VkImageMemoryBarrier2 imageBarrier {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+    imageBarrier.pNext = nullptr;
+
+    imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    imageBarrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+    imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    imageBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
+
+    imageBarrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    imageBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkImageAspectFlags aspectMask =  VK_IMAGE_ASPECT_DEPTH_BIT;
+    imageBarrier.subresourceRange = vkinit::image_subresource_range(aspectMask);
+    imageBarrier.image = _lightDepthImage.image;
+
+    VkDependencyInfo depInfo {};
+    depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    depInfo.pNext = nullptr;
+
+    depInfo.imageMemoryBarrierCount = 1;
+    depInfo.pImageMemoryBarriers = &imageBarrier;
+
+    vkCmdPipelineBarrier2(cmd, &depInfo);
+    ///////////////////////////////
 
 
     draw_geometry(cmd);
@@ -587,6 +615,7 @@ void VulkanEngine::init_swapchain(){
     _depthImage.imageExtent = drawImageExtent;
     VkImageUsageFlags depthImageUsages{};
     depthImageUsages |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    depthImageUsages |= VK_IMAGE_USAGE_SAMPLED_BIT;
 
     VkImageCreateInfo dimg_info = vkinit::image_create_info(_depthImage.imageFormat, depthImageUsages, drawImageExtent);
 
@@ -606,6 +635,7 @@ void VulkanEngine::init_swapchain(){
 
     VkImageUsageFlags lightDepthImageUsages{};
     lightDepthImageUsages |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    lightDepthImageUsages |= VK_IMAGE_USAGE_SAMPLED_BIT;
 
     VkImageCreateInfo ldimg_info = vkinit::image_create_info(_lightDepthImage.imageFormat, lightDepthImageUsages, lightImageExtent);
     vmaCreateImage(_allocator, &ldimg_info, &rimg_allocinfo, &_lightDepthImage.image, &_lightDepthImage.allocation, nullptr);
@@ -1274,7 +1304,9 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
         GPUDrawPushConstants pushConstants;
         pushConstants.vertexBuffer = draw.vertexBufferAddress;
         pushConstants.worldMatrix = draw.transform;
+        
         vkCmdPushConstants(cmd,draw.material->pipeline->layout ,VK_SHADER_STAGE_VERTEX_BIT,0, sizeof(GPUDrawPushConstants), &pushConstants);
+        vkCmdPushConstants(cmd, draw.material->pipeline->layout, VK_SHADER_STAGE_FRAGMENT_BIT,sizeof(GPUDrawPushConstants), sizeof(int), &draw.useNormal);
 
         vkCmdDrawIndexed(cmd,draw.indexCount,1,draw.firstIndex,0,0);
 
@@ -1398,10 +1430,15 @@ void VulkanEngine::init_mesh_pipeline(){
     bufferRange.offset = 0;
     bufferRange.size = sizeof(GPUDrawPushConstants);
     bufferRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    VkPushConstantRange normalRange{};
+    normalRange.offset = sizeof(GPUDrawPushConstants);
+    normalRange.size = sizeof(int);
+    normalRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
+    VkPushConstantRange pushConstants[] = {bufferRange, normalRange};
     VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
-    pipeline_layout_info.pPushConstantRanges = &bufferRange;
-    pipeline_layout_info.pushConstantRangeCount = 1;
+    pipeline_layout_info.pPushConstantRanges = pushConstants;
+    pipeline_layout_info.pushConstantRangeCount = 2;
     pipeline_layout_info.pSetLayouts = &_singleImageDescriptorLayout;
     pipeline_layout_info.setLayoutCount = 1;
 
@@ -1518,9 +1555,6 @@ void VulkanEngine::init_default_data() {
     GLTFMetallic_Roughness::MaterialResources materialResources;
     //default the material textures
     int width, height, channels;
-    AllocatedImage _gravelImage;
-    AllocatedImage _gravelRoughness;
-    AllocatedImage _gravelNormal;
     
     // std::string gravelPath = {};
     ////////loading default textures for normal mapping
@@ -1682,12 +1716,12 @@ void VulkanEngine::destroy_image(const AllocatedImage& img){
 
 void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine){
     // VkShaderModule meshFragShader;
-    // if (!vkutil::load_shader_module("shaders/mesh.frag.spv", engine->_device, &meshFragShader)) {
+    // if (!vkutil::load_shader_module("shaders/mesh_phong.frag.spv", engine->_device, &meshFragShader)) {
     //     fmt::println("Error when building the triangle fragment shader module");
     // }
 
     // VkShaderModule meshVertexShader;
-    // if (!vkutil::load_shader_module("shaders/mesh.vert.spv", engine->_device, &meshVertexShader)) {
+    // if (!vkutil::load_shader_module("shaders/mesh_phong.vert.spv", engine->_device, &meshVertexShader)) {
     //     fmt::println("Error when building the triangle vertex shader module");
     // }
     VkShaderModule meshFragShader;
@@ -1704,6 +1738,11 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine){
     matrixRange.offset = 0;
     matrixRange.size = sizeof(GPUDrawPushConstants);
     matrixRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    
+    VkPushConstantRange normalRange{};
+    normalRange.offset = sizeof(GPUDrawPushConstants);// the offset must begin where the other one ends.
+    normalRange.size = sizeof(int);
+    normalRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
     DescriptorLayoutBuilder builder;
     builder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
@@ -1714,9 +1753,11 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine){
     materialLayout = builder.build(engine->_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
     VkDescriptorSetLayout layouts[] = { engine->_gpuSceneDataDescriptorLayout, materialLayout };
 
+    VkPushConstantRange pushConstantRanges[] = { matrixRange, normalRange };
+
     VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
-    pipeline_layout_info.pPushConstantRanges = &matrixRange;
-    pipeline_layout_info.pushConstantRangeCount = 1;
+    pipeline_layout_info.pPushConstantRanges = pushConstantRanges;
+    pipeline_layout_info.pushConstantRangeCount = 2;
     pipeline_layout_info.pSetLayouts = layouts;
     pipeline_layout_info.setLayoutCount = 2; //creating 2 pipelines, one Opaque and one 
 
@@ -1788,6 +1829,7 @@ void GLTFMetallic_Roughness::clear_resources(VkDevice device){
 
 
 void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx){
+
     glm::mat4 nodeMatrix = topMatrix * worldTransform;
     for (auto& s : mesh->surfaces) {
         RenderObject def;
@@ -1798,6 +1840,7 @@ void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx){
         def.bounds = s.bounds;
         def.transform = nodeMatrix;
         def.vertexBufferAddress = mesh->meshBuffers.vertexBufferAddress;
+        def.useNormal = useNormal;
 
         if(s.material->data.passType == MaterialPass::Transparent){
             ctx.TransparentSurfaces.push_back(def);
@@ -1822,9 +1865,14 @@ void VulkanEngine::update_scene(){
     lightDrawContext.OpaqueSurfaces.clear();
     lightDrawContext.TransparentSurfaces.clear();
 
+    int useNormal = 1;
+    loadedNodes["Suzanne"]->useNormal = useNormal;
+
+    // fmt::print("suzanne normal : {}\n", loadedNodes["Suzanne"]->useNormal);
     loadedNodes["Suzanne"]->Draw(glm::mat4{1.f}, mainDrawContext);
 
     loadedNodes["Suzanne"]->Draw(glm::mat4{1.f}, lightDrawContext);
+
     // sceneData.view = glm::translate(glm::vec3{ 0,0,-5 });
     sceneData.view = mainCamera.getViewMatrix();
     // camera projection
@@ -1866,12 +1914,20 @@ void VulkanEngine::update_scene(){
  
 
     // for (int x = -2; x < 4; x++){
-        glm::mat4 scale = glm::scale(glm::vec3{5.0, 0.2, 5.0});
-        glm::mat4 translation =  glm::translate(glm::vec3{0, -2, 0});
+    glm::mat4 scale = glm::scale(glm::vec3{5.0, 0.2, 5.0});
+    glm::mat4 translation =  glm::translate(glm::vec3{0, -2, 0});
 
-        loadedNodes["Cube"]->Draw(translation * scale, mainDrawContext);
-        loadedNodes["Cube"]->Draw(translation * scale, lightDrawContext);
+    loadedNodes["Cube"]->useNormal = useNormal;
+    loadedNodes["Cube"]->Draw(translation * scale, mainDrawContext);
+    loadedNodes["Cube"]->Draw(translation * scale, lightDrawContext);
         
+    translation = glm::translate(glm::vec3(0.2, -0.9, 1));
+    // loadedNodes["blowgun HUD_blowgunHUD_0"]->Draw(translation * scale, mainDrawContext);
+    // loadedNodes["blowgun HUD_blowgunHUD_0"]->Draw(translation * scale, lightDrawContext);
+    // loadedScenes["blowDart"]->topNodes[0]->children[1]->Draw(translation, mainDrawContext);
+    
+    loadedScenes["blowDart"]->Draw(translation, mainDrawContext);
+
 
     // }
     scale = glm::scale(glm::vec3{0.01, 0.01, 0.01});
@@ -1882,15 +1938,12 @@ void VulkanEngine::update_scene(){
         loadedScenes["balloon"]->Draw(translation * scale, lightDrawContext);
    
     }
-    // translation = glm::translate(glm::vec3(0.2, -0.9, 1));
-    // loadedNodes["blowgun HUD_blowgunHUD_0"]->Draw(translation * scale, mainDrawContext);
-    // loadedNodes["blowgun HUD_blowgunHUD_0"]->Draw(translation * scale, lightDrawContext);
-    // loadedScenes["blowDart"]->topNodes[0]->children[1]->Draw(translation, mainDrawContext);
-    // loadedScenes["blowDart"]->Draw(translation, mainDrawContext);
     
     glm::mat4 translate = glm::translate(glm::mat4{ 1.f }, glm::vec3(200, 0, 0)); 
     glm::mat4 smallTranslate = glm::translate(glm::mat4{ 1.f }, glm::vec3(1, -1.5, 0)); 
     scale = glm::scale(glm::vec3{5.0, 5.0, 5.0});
+
+    // loadedScenes
     loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
 
     loadedScenes["virtual city"]->Draw(translate, mainDrawContext);
@@ -1970,6 +2023,14 @@ void VulkanEngine::init_shadow_map_pipeline(){
     fmt::print("shadow initialization complete\n");
 
     vkDestroyShaderModule(_device, shadowVertexShader, nullptr);
+
+    //delete the pipeline and pipelin layout
+    // almost forgot on previous runs. Validation layers not happy :(
+    _mainDeletionQueue.push_function([&](){
+        vkDestroyPipeline(_device, _shadowPipeline, nullptr);
+        vkDestroyPipelineLayout(_device, _shadowPipelineLayout, nullptr);                                 
+     });
+    
 }
 
 

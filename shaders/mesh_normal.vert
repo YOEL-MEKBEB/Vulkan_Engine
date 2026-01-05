@@ -13,6 +13,7 @@ layout (location = 4) out vec4 lightview_position;
 layout (location = 5) out vec4 outPositionTangent;
 layout (location = 6) out vec4 cameraPositionTangent;
 layout (location = 7) out vec4 lightDirectionTangent;
+layout (location = 8) out int useSceneNormal;
 
 struct Vertex {
 
@@ -33,6 +34,7 @@ layout( push_constant ) uniform constants
 {
 	mat4 render_matrix;
 	VertexBuffer vertexBuffer;
+	// int useNormal;
 } PushConstants;
 
 void main() 
@@ -68,8 +70,19 @@ void main()
 	    tangent.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
 	    tangent.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
 	    tangent.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
+	    // vec3 c1 = cross(v.normal, vec3(0.0, 0.0, 1.0)); 
+     //    vec3 c2 = cross(v.normal, vec3(0.0, 1.0, 0.0)); 
+        
+     //    // Pick the cross product that produces a longer vector (to avoid 0-length results)
+     //    if(length(c1) > length(c2)) {
+     //        tangent = c1;
+     //    } else {
+     //        tangent = c2;
+     //    }
+	    useSceneNormal = 0;
     }else{
     	tangent = v.tangent.rgb;
+    	useSceneNormal = 1;
     }
     //using the gram-shmidt process to calculate the bitangent vector;
     vec3 T = normalize(vec3(PushConstants.render_matrix * vec4(tangent, 0.0)));
