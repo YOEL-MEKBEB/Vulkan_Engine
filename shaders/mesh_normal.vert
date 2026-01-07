@@ -14,6 +14,7 @@ layout (location = 5) out vec4 outPositionTangent;
 layout (location = 6) out vec4 cameraPositionTangent;
 layout (location = 7) out vec4 lightDirectionTangent;
 layout (location = 8) out int useSceneNormal;
+layout (location = 9) out vec3 skyboxTexCoords;
 
 struct Vertex {
 

@@ -285,14 +285,15 @@ VkImageCreateInfo vkinit::image_create_info(VkFormat format, VkImageUsageFlags u
     return info;
 }
 
-VkImageViewCreateInfo vkinit::imageview_create_info(VkFormat format, VkImage image, VkImageAspectFlags aspectFlags)
+VkImageViewCreateInfo vkinit::imageview_create_info(VkFormat format, VkImage image, VkImageAspectFlags aspectFlags, VkImageViewType viewType)
 {
     // build a image-view for the depth image to use for rendering
     VkImageViewCreateInfo info = {};
     info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     info.pNext = nullptr;
 
-    info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    // info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    info.viewType = viewType;
     info.image = image;
     info.format = format;
     info.subresourceRange.baseMipLevel = 0;

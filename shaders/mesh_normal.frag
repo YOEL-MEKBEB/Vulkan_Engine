@@ -19,7 +19,6 @@ layout (set = 0, binding = 2) uniform sampler2D shadowMap;
 
 layout( push_constant ) uniform constants
 {
-	// int useNormal;
 	layout (offset = 72) int useNormal;
 } PushConstants;
 

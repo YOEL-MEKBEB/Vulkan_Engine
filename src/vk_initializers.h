@@ -53,7 +53,7 @@ VkDescriptorBufferInfo buffer_info(VkBuffer buffer, VkDeviceSize offset, VkDevic
 
 VkImageCreateInfo image_create_info(VkFormat format, VkImageUsageFlags usageFlags, VkExtent3D extent);
 
-VkImageViewCreateInfo imageview_create_info(VkFormat format, VkImage image, VkImageAspectFlags aspectFlags);
+VkImageViewCreateInfo imageview_create_info(VkFormat format, VkImage image, VkImageAspectFlags aspectFlags, VkImageViewType viewType);
 
 VkPipelineLayoutCreateInfo pipeline_layout_create_info();
 

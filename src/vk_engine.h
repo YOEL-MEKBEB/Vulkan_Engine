@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <vector>
 #include <vk_types.h>
 #include "vk_descriptors.h"
 #include <glm/glm.hpp>
@@ -346,11 +347,12 @@ public:
 	//Functions to Create and destroy the buffers.
 	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
 	void destroy_buffer(const AllocatedBuffer& buffer);
+	GPUMeshBuffers cube;
 	////////////////////////////////////////////////
 
 	//////////////// Images /////////////////////////
-	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
-	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
+	AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, VkImageViewType viewType, bool mipmapped = false);
+	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, VkImageViewType viewType, bool mipmapped = false);
 	void destroy_image(const AllocatedImage& img);
 
 	// These are default textures for when loading textures fail.
@@ -361,7 +363,8 @@ public:
 
   VkSampler _defaultSamplerLinear;  // linear interpolation sampling
 	VkSampler _defaultSamplerNearest; // nearest neighbors sampling
-
+	VkSampler _defaultCubeSampler;
+	
 	//descriptor set layout for textures
 	VkDescriptorSetLayout _singleImageDescriptorLayout;
 	//////////////////////////////////////////////
@@ -380,10 +383,20 @@ public:
 	void update_scene();
 	////////////////////////////////////////////////////////////////
 
-	
+	///////////////Defaylt loaded textures///////////
   AllocatedImage _gravelImage;
   AllocatedImage _gravelRoughness;
   AllocatedImage _gravelNormal;
+	//////////////////////////////////////////////
+
+	// std::vector<AllocatedImage> _cubeMapTextures;
+	AllocatedImage _cubeMapTextures;
+	
+	/////////////cubMap pipeline and scene Data/////////////
+	VkPipelineLayout _skyboxPipelineLayout;
+	VkPipeline _skyboxPipeline;
+	//////////////////////////////////////////////
+	  
 
 private:
 	void init_vulkan(); //initialize the vulkan instance
@@ -399,9 +412,12 @@ private:
 	void init_pipelines(); //calls all the pipeline initialization function
 	void init_background_pipelines(); //initialize the compute shader pipeline
 	void init_shadow_map_pipeline(); // initializes the shadow maps rendering pipeline
+	void init_skybox_pipeline();
 	void init_mesh_pipeline(); //initialize the mesh pipelines
 	void init_imgui(); 
 	void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
 	void init_default_data(); //set the default data for textures and transformations
 	void render_shadow_map(VkCommandBuffer cmd);
+	void render_skybox(VkCommandBuffer cmd, VkRenderingInfo& renderInfo);
+	void load_cube_map();
 };
