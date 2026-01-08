@@ -15,8 +15,6 @@ layout (location = 7) in vec4 lightDirectionTangent;
 layout (location = 8) in flat int useSceneNormal; //the flat keyworkd signifies no interpolation
 
 layout (location = 0) out vec4 outFragColor;
-layout (set = 0, binding = 2) uniform sampler2D shadowMap;
-
 layout( push_constant ) uniform constants
 {
 	layout (offset = 72) int useNormal;
