@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 //#include <sys/_types/_u_int32_t.h>
 #include <cstdint>
@@ -14,6 +15,7 @@
 #include "vk_images.h"
 
 #include "VkBootstrap.h"
+#include "vk_loader.h"
 #include "vulkan/vulkan_core.h"
 
 #include "vk_pipelines.h"
@@ -120,6 +122,7 @@ void VulkanEngine::init(){
     std::string donutPath = {"assets/donut.glb"};
     std::string balloonPath = {"assets/balloon.glb"};
     std::string blowDartPath = {"assets/aztec_blowgun_and_darts.glb"};
+    std::string helmetPath = {"assets/DamagedHelmet.glb"};
     
     auto structureFile = loadGltf(this,structurePath);
     assert(structureFile.has_value());
@@ -135,13 +138,16 @@ void VulkanEngine::init(){
 
     auto blowDartFile = loadGltf(this, blowDartPath);
     assert(blowDartFile.has_value());
-    
+
+    auto helmetFile = loadGltf(this, helmetPath);
+    assert(helmetFile.has_value());
 
     loadedScenes["structure"] = *structureFile;
     loadedScenes["virtual city"] = *cityFile;
     loadedScenes["donut"] = *donutFile;
     loadedScenes["balloon"] = *balloonFile;
     loadedScenes["blowDart"] = *blowDartFile;
+    loadedScenes["helmet"] = *helmetFile;
     /////////////////////////////////
     
     ////////////////// initialize lighting parameters for blinn-phong illumination models
@@ -473,6 +479,20 @@ void VulkanEngine::run(){
 
     		ImGui::End();
 
+    		if (ImGui::Begin("PBR rendering components")){
+    	
+    			ImGui::InputFloat4("Color Factors",(float*)& colorFactors);
+    			ImGui::InputFloat4("metal rough factors",(float*)& metal_rough_factors);
+    		}
+  
+    		ImGui::End();
+
+        /////////debugging use only
+    		GLTFMetallic_Roughness::MaterialConstants* materialData = (GLTFMetallic_Roughness::MaterialConstants*)materialConstants.allocation->GetMappedData();
+        materialData->colorFactors = colorFactors;
+        materialData->metal_rough_factors = metal_rough_factors;
+        /////////////////
+    
         //make imgui calculate internal draw structures
         ImGui::Render();
 
@@ -778,6 +798,7 @@ void VulkanEngine::init_descriptors(){
         _drawImageDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_COMPUTE_BIT);
     }
 
+    //main image Descriptor set layout
     {
     	DescriptorLayoutBuilder builder;
     	builder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
@@ -786,6 +807,8 @@ void VulkanEngine::init_descriptors(){
     	builder.add_binding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER); //skybox
     	_gpuSceneDataDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
     }
+
+    //shadow map Descriptor set layuout
     {
     	DescriptorLayoutBuilder builder;
     	builder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
@@ -797,11 +820,19 @@ void VulkanEngine::init_descriptors(){
     	builder.add_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     	_singleImageDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_FRAGMENT_BIT);
     }
+    
+    //equirectangular map to cube map Conversion Descriptor layout
+    {
+        DescriptorLayoutBuilder builder;
+        builder.add_binding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+        builder.add_binding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        _rectToCubeDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_COMPUTE_BIT);
+    }
 
     
-
     //allocate a descriptor set for our draw image
-    _drawImageDescriptors = globalDescriptorAllocator.allocate(_device,_drawImageDescriptorLayout);	
+    _drawImageDescriptors = globalDescriptorAllocator.allocate(_device, _drawImageDescriptorLayout);	
+    _rectToCubeDescriptor = globalDescriptorAllocator.allocate(_device, _rectToCubeDescriptorLayout);
 
     // VkDescriptorImageInfo imgInfo{};
     // imgInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -822,6 +853,7 @@ void VulkanEngine::init_descriptors(){
     DescriptorWriter writer;
     writer.write_image(0, _drawImage.imageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
     writer.update_set(_device, _drawImageDescriptors);
+
     //make sure both the descriptor allocator and the new layout get cleaned up properly
     _mainDeletionQueue.push_function([&]() {
         globalDescriptorAllocator.destroy_pools(_device);
@@ -830,6 +862,7 @@ void VulkanEngine::init_descriptors(){
         vkDestroyDescriptorSetLayout(_device, _gpuSceneDataDescriptorLayout, nullptr);
         vkDestroyDescriptorSetLayout(_device, _singleImageDescriptorLayout, nullptr);
         vkDestroyDescriptorSetLayout(_device, _shadowSceneDataDescriptorLayout, nullptr);
+        vkDestroyDescriptorSetLayout(_device, _rectToCubeDescriptorLayout, nullptr);
     });
 
     for (int i = 0; i < FRAME_OVERLAP; i++) {
@@ -850,7 +883,6 @@ void VulkanEngine::init_descriptors(){
     }
 }
 
-
 void VulkanEngine::init_pipelines(){
     init_background_pipelines();
     // init_triangle_pipeline();
@@ -858,6 +890,7 @@ void VulkanEngine::init_pipelines(){
     metalRoughMaterial.build_pipelines(this);
     init_shadow_map_pipeline();
     init_skybox_pipeline();
+    init_rect_to_cube_pipeline();
     init_default_data();
 
 }
@@ -1188,7 +1221,9 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
     writer.write_buffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     writer.write_buffer(1, gpuShadowBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     writer.write_image(2, _lightDepthImage.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    // writer.write_image(3, _cubeMapTextures.imageView, _defaultCubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+
+    //skybox cube map texture that gets sent to the main shader for environment mapping
+    writer.write_image(3, _cubeMapHDRTexture.imageView, _defaultCubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.update_set(_device, globalDescriptor);
     
     
@@ -1673,6 +1708,10 @@ void VulkanEngine::init_default_data() {
     
     // std::string gravelPath = {};
     ////////loading default textures for normal mapping
+    
+    //flip vertically for some reason gets the texture right?????///// I don't get
+    // I found this due to a bug that made the gravel texture look more like gravel.
+    stbi_set_flip_vertically_on_load(true);
     unsigned char* data = stbi_load("assets/Gravel_001_BaseColor.jpg", &width, &height, &channels, 4);
     VkExtent3D size = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
     
@@ -1691,6 +1730,7 @@ void VulkanEngine::init_default_data() {
 
     _gravelNormal = create_image(data, size, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_VIEW_TYPE_2D, false);
     stbi_image_free(data);
+    stbi_set_flip_vertically_on_load(false);
     
     /////////
     _mainDeletionQueue.push_function([&](){
@@ -1706,6 +1746,8 @@ void VulkanEngine::init_default_data() {
         destroy_image(_gravelRoughness);
         destroy_image(_gravelNormal);
         destroy_image(_cubeMapTextures);
+        destroy_image(_cubeMapHDRTexture);
+        destroy_image(_loadedHDRTexture);
     });
     
     materialResources.colorImage = _gravelImage;
@@ -1718,12 +1760,12 @@ void VulkanEngine::init_default_data() {
     // materialResources.cubeSampler = _defaultCubeSampler;
 
     //set the uniform buffer for the material data
-    AllocatedBuffer materialConstants = create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    materialConstants = create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
     //write the buffer
     GLTFMetallic_Roughness::MaterialConstants* sceneUniformData = (GLTFMetallic_Roughness::MaterialConstants*)materialConstants.allocation->GetMappedData();
-    sceneUniformData->colorFactors = glm::vec4{1,1,1,1};
-    sceneUniformData->metal_rough_factors = glm::vec4{1,0.5,0,0};
+    sceneUniformData->colorFactors = colorFactors;
+    sceneUniformData->metal_rough_factors = metal_rough_factors;
 
     _mainDeletionQueue.push_function([=, this]() {
         destroy_buffer(materialConstants);
@@ -1751,6 +1793,8 @@ void VulkanEngine::init_default_data() {
 
         loadedNodes[m->name] = std::move(newNode);
     }
+
+    convert_to_cube();
 }
 
 AllocatedImage VulkanEngine::create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, VkImageViewType viewType, bool mipmapped){
@@ -1795,7 +1839,11 @@ AllocatedImage VulkanEngine::create_image(VkExtent3D size, VkFormat format, VkIm
 }
 
 AllocatedImage VulkanEngine::create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, VkImageViewType viewType, bool mipmapped){
-    size_t data_size = size.depth * size.width * size.height * 4;
+    int pixelSize = 4; // Default for RGBA8
+    if (format == VK_FORMAT_R32G32B32A32_SFLOAT) {
+        pixelSize = 16; // 4 channels * 4 bytes (float)
+    }
+    size_t data_size = size.depth * size.width * size.height * pixelSize;
     AllocatedBuffer uploadbuffer = create_buffer(data_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
     memcpy(uploadbuffer.info.pMappedData, data, data_size);
@@ -2054,11 +2102,13 @@ void VulkanEngine::update_scene(){
     loadedNodes["Cube"]->Draw(translation * scale, lightDrawContext);
         
     translation = glm::translate(glm::vec3(0.2, -0.9, 1));
-    // loadedNodes["blowgun HUD_blowgunHUD_0"]->Draw(translation * scale, mainDrawContext);
-    // loadedNodes["blowgun HUD_blowgunHUD_0"]->Draw(translation * scale, lightDrawContext);
-    // loadedScenes["blowDart"]->topNodes[0]->children[1]->Draw(translation, mainDrawContext);
     
     loadedScenes["blowDart"]->Draw(translation, mainDrawContext);
+    loadedScenes["blowDart"]->Draw(translation, lightDrawContext);
+    
+    translation = glm::translate(glm::vec3(10.0, 0, 1));
+    loadedScenes["helmet"]->Draw(translation, mainDrawContext);
+    loadedScenes["helmet"]->Draw(translation, lightDrawContext);
 
 
     // }
@@ -2297,6 +2347,8 @@ void VulkanEngine::load_cube_map(){
         static_cast<uint32_t>(height), 
         1 
     };
+    uint32_t faceWidth = static_cast<uint32_t>(width);
+    uint32_t faceHeight = static_cast<uint32_t>(height);
 
     // VkExtent3D size = {static_cast<uint32_t>(total_width), static_cast<uint32_t>(total_height), 1};
     size_t data_size = textures.size();
@@ -2333,8 +2385,45 @@ void VulkanEngine::load_cube_map(){
     destroy_buffer(uploadbuffer);
 
     _cubeMapTextures = new_image;
+
+    textures.clear();
     
+    // stbi_set_flip_vertically_on_load(true);
+    float *data = stbi_loadf("assets/cave_wall_4k.hdr", &width, &height, &channel, 4);
+    if (data)
+    {
+        size = { 
+            static_cast<uint32_t>(width), 
+            static_cast<uint32_t>(height), 
+            1
+        };
+
+        //need to load as a 2D texture for equirectangular projection.
+        //The image will be processed and get converted into a cube map but for now I'll set it
+        // to _cubeMapHDrTexture.
+        AllocatedImage newer_image= create_image(data, size, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_VIEW_TYPE_2D, false);        
+
+        stbi_image_free(data);
+        size = { 
+            faceWidth, 
+            faceHeight, 
+            1
+        };
+       
+        _loadedHDRTexture = newer_image;
+        VkExtent3D cubemapSize = { 1024, 1024, 1 };
+
+        _cubeMapHDRTexture = create_image(cubemapSize, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_IMAGE_VIEW_TYPE_CUBE,false);
+    }
+    else
+    {
+        fmt::print("failed to load hdr\n");        
+    }  
+
+       
 }
+
+
 void VulkanEngine::init_skybox_pipeline(){
     fmt::print("initialize skybox began\n");
         
@@ -2434,7 +2523,8 @@ void VulkanEngine::render_skybox(VkCommandBuffer cmd, VkRenderingInfo& renderInf
     });
 
     writer.write_buffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-    writer.write_image(3, _cubeMapTextures.imageView, _defaultCubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    //skybox cube map texture that gets sent to the skybox shader to render the skybox
+    writer.write_image(3, _cubeMapHDRTexture.imageView, _defaultCubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.update_set(_device, globalDescriptor);
 
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _skyboxPipelineLayout, 0, 1, &globalDescriptor, 0, nullptr);
@@ -2454,3 +2544,88 @@ void VulkanEngine::render_skybox(VkCommandBuffer cmd, VkRenderingInfo& renderInf
  
 }
 
+void VulkanEngine::init_rect_to_cube_pipeline(){
+       
+    //creating the layout info for the pipeline
+    VkPipelineLayoutCreateInfo computeLayout{};
+    computeLayout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    computeLayout.pNext = nullptr;
+    computeLayout.pSetLayouts = &_rectToCubeDescriptorLayout;
+    computeLayout.setLayoutCount = 1;
+    computeLayout.pPushConstantRanges = nullptr;
+    computeLayout.pushConstantRangeCount = 0;
+
+    VK_CHECK(vkCreatePipelineLayout(_device, &computeLayout, nullptr, &_rectToCubePipelineLayout));
+
+
+    //layout code
+    VkShaderModule rectToCubeShader;
+    if (!vkutil::load_shader_module("shaders/rect_to_cube.comp.spv", _device, &rectToCubeShader))
+    {
+        fmt::print("Error when building the compute shader \n");
+    }
+
+    VkPipelineShaderStageCreateInfo stageinfo{};
+    stageinfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stageinfo.pNext = nullptr;
+    stageinfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stageinfo.module = rectToCubeShader;
+    //note here is that we are giving
+    // it the name of the function we want
+    // the shader to use, which is going to be main().
+    stageinfo.pName = "main";
+
+    VkComputePipelineCreateInfo computePipelineCreateInfo{};
+    computePipelineCreateInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    computePipelineCreateInfo.pNext = nullptr;
+    computePipelineCreateInfo.layout = _rectToCubePipelineLayout;
+    computePipelineCreateInfo.stage = stageinfo;
+
+
+    ComputeEffect toCube;
+    toCube.layout = _rectToCubePipelineLayout;
+    toCube.name = "toCube";
+    toCube.data = {};
+
+    VK_CHECK(vkCreateComputePipelines(_device,VK_NULL_HANDLE,1,&computePipelineCreateInfo, nullptr, &toCube.pipeline));
+    vkDestroyShaderModule(_device, rectToCubeShader, nullptr);
+    _rectToCubeEffect = toCube;
+    
+    _mainDeletionQueue.push_function([=]() {
+    		vkDestroyPipelineLayout(_device, _rectToCubePipelineLayout, nullptr);
+    		vkDestroyPipeline(_device, toCube.pipeline, nullptr);
+		});
+}
+
+void VulkanEngine::convert_to_cube(){
+    
+    VK_CHECK(vkResetFences(_device, 1, &get_current_frame()._renderFence));
+    VkCommandBuffer cmd = get_current_frame()._mainCommandBuffer;
+    VK_CHECK(vkResetCommandBuffer(cmd, 0));
+    VkCommandBufferBeginInfo cmdInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+    VK_CHECK(vkBeginCommandBuffer(cmd, &cmdInfo));
+    vkutil::transition_image(cmd, _loadedHDRTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _rectToCubeEffect.pipeline);
+
+    // bind the descriptor set containing the draw image for the compute pipeline
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _rectToCubePipelineLayout, 0, 1, &_rectToCubeDescriptor, 0, nullptr);
+   
+    DescriptorWriter writer;
+    writer.write_image(0, _loadedHDRTexture.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    writer.write_image(1, _cubeMapHDRTexture.imageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+    writer.update_set(_device, _rectToCubeDescriptor);
+
+    // execute the compute pipeline dispatch. We are using 16x16 workgroup size so we need to divide by it
+    uint32_t faceSize = _cubeMapHDRTexture.imageExtent.width; //the width is equal to the height
+    vkCmdDispatch(cmd, std::ceil(faceSize/ 16.0), std::ceil(faceSize/ 16.0), 6);
+    vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_GENERAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    VK_CHECK(vkEndCommandBuffer(cmd));
+
+    VkCommandBufferSubmitInfo cmdSubmitInfo = vkinit::command_buffer_submit_info(cmd);
+    // VkSemaphoreSubmitInfo waitSemaphore = vkinit::semaphore_submit_info(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, get_current_frame()._swapchainSemaphore);
+    // VkSemaphoreSubmitInfo signalSemaphore = vkinit::semaphore_submit_info(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT, get_current_frame()._renderSemaphore);
+    VkSubmitInfo2 submit = vkinit::submit_info(&cmdSubmitInfo, nullptr, nullptr);
+    VK_CHECK(vkQueueSubmit2(_graphicsQueue, 1, &submit, get_current_frame()._renderFence));
+}

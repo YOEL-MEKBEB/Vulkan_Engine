@@ -434,6 +434,15 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::f
             materialResources.normalImage = images[img];
             materialResources.normalSampler = file.samplers[sampler];
         }
+        if (mat.pbrData.metallicRoughnessTexture.has_value()) {
+
+            // 2. Access the texture index from the 'metallicRoughnessTexture' object
+            size_t img = gltf.textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex].imageIndex.value();
+            size_t sampler = gltf.textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex].samplerIndex.value();
+
+            materialResources.metalRoughImage = images[img];
+            materialResources.metalRoughSampler = file.samplers[sampler];
+        }
         // build material
         newMat->data = engine->metalRoughMaterial.write_material(engine->_device, passType, materialResources, file.descriptorPool);
 

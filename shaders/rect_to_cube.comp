@@ -1,0 +1,55 @@
+#version 450
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D equirectangularMap;
+
+layout(binding = 1, rgba32f) uniform writeonly imageCube outputCube;
+
+const float PI = 3.14159265359;
+
+vec2 SampleSphericalMap(vec3 v)
+{
+    vec2 uv = vec2(atan(v.z, v.x), asin(v.y));
+    uv *= vec2(0.1591, 0.3183); // inv(2*PI), inv(PI)
+    uv += 0.5;
+    return uv;
+}
+
+vec3 GetCubeMapDirection(vec2 uv, int faceIndex)
+{
+    float u = uv.x * 2.0 - 1.0;
+    float v = uv.y * 2.0 - 1.0;
+    
+    // Standard Cube Map Look Vectors
+    // Face order: +X, -X, +Y, -Y, +Z, -Z
+    switch(faceIndex) {
+        case 0: return vec3(1.0,  v, -u); // +X (Right)
+        case 1: return vec3(-1.0, v,  u); // -X (Left)
+        case 2: return vec3(u, -1.0, v); // +Y (Top)
+        case 3: return vec3(u, 1.0, -v); // -Y (Bottom)
+        case 4: return vec3(u,  v, 1.0);  // +Z (Front)
+        case 5: return vec3(-u, v, -1.0); // -Z (Back)
+    }
+    return vec3(0.0);
+}
+
+void main()
+{
+    // Get the pixel coordinates
+    ivec2 pixelPos = ivec2(gl_GlobalInvocationID.xy);
+    int face = int(gl_GlobalInvocationID.z);
+    
+    // Get the size of the face
+    ivec2 size = imageSize(outputCube);
+    
+    if (pixelPos.x >= size.x || pixelPos.y >= size.y) return;
+
+    vec2 uv = (vec2(pixelPos) + 0.5) / vec2(size);
+    
+    vec3 dir = normalize(GetCubeMapDirection(uv, face));
+    
+    vec2 sphereUV = SampleSphericalMap(normalize(dir));
+    vec3 color = texture(equirectangularMap, sphereUV).rgb;
+    
+    imageStore(outputCube, ivec3(pixelPos, face), vec4(color, 1.0));
+}

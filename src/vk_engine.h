@@ -383,19 +383,32 @@ public:
 	void update_scene();
 	////////////////////////////////////////////////////////////////
 
-	///////////////Defaylt loaded textures///////////
+	///////////////Default loaded textures///////////
   AllocatedImage _gravelImage;
   AllocatedImage _gravelRoughness;
-  AllocatedImage _gravelNormal;
+	AllocatedImage _gravelNormal;
 	//////////////////////////////////////////////
 
 	// std::vector<AllocatedImage> _cubeMapTextures;
 	AllocatedImage _cubeMapTextures;
+	AllocatedImage _cubeMapHDRTexture;
+	AllocatedImage _loadedHDRTexture;
+	AllocatedImage _irradianceMapTexture;
+	VkDescriptorSetLayout _rectToCubeDescriptorLayout;
+	VkPipelineLayout _rectToCubePipelineLayout;
+	ComputeEffect _rectToCubeEffect;
+	VkDescriptorSet _rectToCubeDescriptor;
 	
 	/////////////cubMap pipeline and scene Data/////////////
 	VkPipelineLayout _skyboxPipelineLayout;
 	VkPipeline _skyboxPipeline;
 	//////////////////////////////////////////////
+
+	//defualt PBR rendering datapoints///////////
+	glm::vec4 colorFactors = glm::vec4{1,1,1,1};
+	glm::vec4 metal_rough_factors = glm::vec4{0, 1, 0, 0};
+	AllocatedBuffer materialConstants;
+	//////////////////////////////////
 	  
 
 private:
@@ -420,4 +433,6 @@ private:
 	void render_shadow_map(VkCommandBuffer cmd);
 	void render_skybox(VkCommandBuffer cmd, VkRenderingInfo& renderInfo);
 	void load_cube_map();
+	void init_rect_to_cube_pipeline();
+	void convert_to_cube();
 };
