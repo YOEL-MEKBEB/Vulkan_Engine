@@ -1,0 +1,82 @@
+#version 450
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(binding = 0) uniform samplerCube hdrCubeMap;
+
+layout(binding = 1, rgba32f) uniform writeonly imageCube irradianceMap;
+
+const float PI = 3.14159265359;
+
+
+vec3 GetCubeMapDirection(vec2 uv, int faceIndex)
+{
+    float u = uv.x * 2.0 - 1.0;
+    float v = uv.y * 2.0 - 1.0;
+    
+    // Standard Cube Map Look Vectors
+    // Face order: +X, -X, +Y, -Y, +Z, -Z
+    switch(faceIndex) {
+        // case 0: return vec3(1.0,  v, -u); // +X (Right)
+        // case 1: return vec3(-1.0, v,  u); // -X (Left)
+        // case 2: return vec3(u, -1.0, v); // +Y (Top)
+        // case 3: return vec3(u, 1.0, -v); // -Y (Bottom)
+        // case 4: return vec3(u,  v, 1.0);  // +Z (Front)
+        // case 5: return vec3(-u, v, -1.0); // -Z (Back)
+        case 0: return vec3(1.0,  -v, -u); // +X (Right)
+        case 1: return vec3(-1.0, -v,  u); // -X (Left)
+        case 2: return vec3(u, 1.0, v);    // +Y (Top)
+        case 3: return vec3(u, -1.0, -v);  // -Y (Bottom)
+        case 4: return vec3(u,  -v, 1.0);  // +Z (Front)
+        case 5: return vec3(-u, -v, -1.0); // -Z (Back)
+    }
+    return vec3(0.0);
+}
+
+float random(vec2 co) { return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453); }
+
+void main()
+{
+    // Get the pixel coordinates
+    ivec2 pixelPos = ivec2(gl_GlobalInvocationID.xy);
+    int face = int(gl_GlobalInvocationID.z);
+    
+    // Get the size of the face
+    ivec2 size = imageSize(irradianceMap);
+    
+    if (pixelPos.x >= size.x || pixelPos.y >= size.y) return;
+
+    vec2 uv = (vec2(pixelPos) + 0.5) / vec2(size);
+    
+    vec3 normal = normalize(GetCubeMapDirection(uv, face));
+    vec3 up = vec3(0.0, 1.0, 0.0);
+    vec3 worldUp = abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 right = normalize(cross(worldUp, normal));
+    up = normalize(cross(normal, right));
+
+    vec3 irradiance = vec3(0.0);
+
+    float sampleDelta = 0.0125;
+    float nrSamples = 0.0;
+    // float phiOffset = random(vec2(pixelPos)) * 0.1;
+    //TODO: optimize this, this is too bruteforce
+    for(float phi = 0.0 ; phi < 2.0 * PI; phi += sampleDelta)
+    {
+        for(float theta = 0.0; theta < 0.5 * PI; theta += sampleDelta)
+        {
+            // spherical to cartesian (in tangent space)
+            vec3 tangentSample = vec3(sin(theta) * cos(phi),  sin(theta) * sin(phi), cos(theta));
+            // tangent space to world
+            vec3 sampleVec = tangentSample.x * right + tangentSample.y * up + tangentSample.z * normal; 
+
+            //clamping it because starry skies are too high frequency
+            vec3 sampledColor = texture(hdrCubeMap, sampleVec).rgb;
+            sampledColor = min(sampledColor, vec3(500.0));
+
+            irradiance += sampledColor * cos(theta) * sin(theta);
+            nrSamples++;
+        }
+    }
+    irradiance = PI * irradiance * (1.0 / float(nrSamples));
+    
+    imageStore(irradianceMap, ivec3(pixelPos, face), vec4(irradiance, 1.0));
+}

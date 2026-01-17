@@ -64,6 +64,11 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
 }
 
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
+{
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}   
+
 
 void main(){
     vec3 nTangent;
@@ -86,7 +91,7 @@ void main(){
 
 	// vec4 color = inColor * texture(colorTex,inUV);
  //    vec3 diffuse = sceneData.sunlightColor.xyz * sceneData.sunlightColor.w *  max(dot(nTangent, lightDir), 0.0);
- //    vec3 ambient = sceneData.ambientColor.xyz * sceneData.ambientColor.w;g
+ //    vec3 ambient = sceneData.ambientColor.xyz * sceneData.ambientColor.w;
  //    vec3 specular = sceneData.specularColor.xyz * sceneData.specularColor.w * pow(max(dot(nTangent, H), 0.0), float(sceneData.shininess));
 
 	// // outFragColor = vec4(color * lightValue *  sceneData.sunlightColor.xyz + ambient ,1.0f);
@@ -148,7 +153,13 @@ void main(){
     float NdotL = max(dot(nTangent, lightDir), 0.0);        
     vec3 Lo = (kD * albedo / PI + specular) * radiance * NdotL;
 
-    vec3 ambient = vec3(0.03) * albedo * ao;
+
+    kS = fresnelSchlickRoughness(max(dot(nTangent, viewDir), 0.0), F0, roughness);//no halfway vector for irradiance map
+    kD = 1.0 - kS;
+    vec3 irradiance = texture(skybox, nTangent).rgb;
+    vec3 diffuse    = irradiance * albedo;
+    vec3 ambient    = (kD * diffuse) * ao; 
+    // vec3 ambient = vec3(0.03) * albedo * ao;
     
     float shadow = 0.0;
     vec3 p = lightview_position.xyz/lightview_position.w;

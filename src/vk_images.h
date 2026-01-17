@@ -10,6 +10,9 @@ namespace vkutil {
 // It uses barriers so that other asynchronous operation don't touch it during this process.
 void transition_image(VkCommandBuffer cmd, VkImage image, VkImageLayout currentLayout, VkImageLayout newLayout);
 
+//override function to handle cube map mip map generation
+void transition_image(VkCommandBuffer cmd, VkImage image, VkImageLayout currentLayout, VkImageLayout newLayout, int layerCount);
+
 //It does what the name suggests. It copies from the source to the destination in the GPU.
 // Note that the images don't have to be the same size.
 void copy_image_to_image(VkCommandBuffer cmd, VkImage source, VkImage destination, VkExtent2D srcSize, VkExtent2D dstSize);
@@ -18,7 +21,7 @@ void copy_image_to_image(VkCommandBuffer cmd, VkImage source, VkImage destinatio
 // what we have in copy_image_to_image but with mip levels. In a way, this function combines the two.
 // At each loop, we divide the image size by four, transition the mip level we copy from, and
 // perform a VkCmdBlit from one mip level to the next.
-void generate_mipmaps(VkCommandBuffer cmd, VkImage image, VkExtent2D imageSize);
+void generate_mipmaps(VkCommandBuffer cmd, VkImage image, VkExtent2D imageSize, int layerCount);
 }
 
 

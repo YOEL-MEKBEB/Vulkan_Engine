@@ -18,6 +18,7 @@
 // on the screen using ImGui
 struct EngineStats{
 	float frametime;
+	int fps;
 	int triangle_count;
 	int drawcall_count;
 	float scene_update_time;
@@ -398,6 +399,8 @@ public:
 	VkPipelineLayout _rectToCubePipelineLayout;
 	ComputeEffect _rectToCubeEffect;
 	VkDescriptorSet _rectToCubeDescriptor;
+	VkDescriptorSet _irradianceDescriptor;
+	ComputeEffect _irradianceEffect;
 	
 	/////////////cubMap pipeline and scene Data/////////////
 	VkPipelineLayout _skyboxPipelineLayout;

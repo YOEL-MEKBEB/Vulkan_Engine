@@ -9,6 +9,7 @@
 #include <functional>
 //#include <sys/_types/_u_int32_t.h>
 #include <cstdint>
+#include <sys/_types/_u_int32_t.h>
 #include <vk_initializers.h>
 #include <vk_types.h>
 #include "vk_descriptors.h"
@@ -462,6 +463,7 @@ void VulkanEngine::run(){
 	  		ImGui::Begin("Stats");
 
         ImGui::Text("frametime %f ms", stats.frametime);
+        ImGui::Text("fps %i", stats.fps);
         ImGui::Text("draw time %f ms", stats.mesh_draw_time);
         ImGui::Text("update time %f ms", stats.scene_update_time);
         ImGui::Text("triangles %i", stats.triangle_count);
@@ -503,6 +505,7 @@ void VulkanEngine::run(){
         //convert to microseconds (integer), and then come back to miliseconds
         auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
         stats.frametime = elapsed.count() / 1000.f;
+        stats.fps = (int)(1/(stats.frametime/1000.f));
     }
 }
 
@@ -534,12 +537,16 @@ void VulkanEngine::init_vulkan(){
     features12.bufferDeviceAddress = true;
     features12.descriptorIndexing = true;
 
+    VkPhysicalDeviceFeatures wireFeatures{};
+    wireFeatures.fillModeNonSolid = VK_TRUE;
+    
     //obtains the devices gpu using vkbootsrap
     vkb::PhysicalDeviceSelector selector{ vkb_inst };
     vkb::PhysicalDevice physicalDevice = selector
 		.set_minimum_version(1, 3)
 		.set_required_features_13(features)
 		.set_required_features_12(features12)
+		.set_required_features(wireFeatures)
 		.set_surface(_surface)
 		.select()
 		.value();
@@ -833,6 +840,8 @@ void VulkanEngine::init_descriptors(){
     //allocate a descriptor set for our draw image
     _drawImageDescriptors = globalDescriptorAllocator.allocate(_device, _drawImageDescriptorLayout);	
     _rectToCubeDescriptor = globalDescriptorAllocator.allocate(_device, _rectToCubeDescriptorLayout);
+    _irradianceDescriptor = globalDescriptorAllocator.allocate(_device, _rectToCubeDescriptorLayout);
+    
 
     // VkDescriptorImageInfo imgInfo{};
     // imgInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -1223,7 +1232,9 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
     writer.write_image(2, _lightDepthImage.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
     //skybox cube map texture that gets sent to the main shader for environment mapping
-    writer.write_image(3, _cubeMapHDRTexture.imageView, _defaultCubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    // replacing with _irradianceMapTexture for PBR
+    // writer.write_image(3, _cubeMapHDRTexture.imageView, _defaultCubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    writer.write_image(3, _irradianceMapTexture.imageView, _defaultCubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.update_set(_device, globalDescriptor);
     
     
@@ -1748,6 +1759,7 @@ void VulkanEngine::init_default_data() {
         destroy_image(_cubeMapTextures);
         destroy_image(_cubeMapHDRTexture);
         destroy_image(_loadedHDRTexture);
+        destroy_image(_irradianceMapTexture);
     });
     
     materialResources.colorImage = _gravelImage;
@@ -1869,7 +1881,9 @@ AllocatedImage VulkanEngine::create_image(void* data, VkExtent3D size, VkFormat 
     			&copyRegion);
 
     		if(mipmapped){
-            vkutil::generate_mipmaps(cmd, new_image.image,VkExtent2D{new_image.imageExtent.width,new_image.imageExtent.height});
+            vkutil::generate_mipmaps(cmd, new_image.image,VkExtent2D{new_image.imageExtent.width,new_image.imageExtent.height},
+                                     (viewType == VK_IMAGE_VIEW_TYPE_CUBE? 6 : 1));
+            
     		}else{
 		    
             vkutil::transition_image(cmd, new_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -2389,7 +2403,9 @@ void VulkanEngine::load_cube_map(){
     textures.clear();
     
     // stbi_set_flip_vertically_on_load(true);
+    // float *data = stbi_loadf("assets/rogland_moonlit_night_4k.hdr", &width, &height, &channel, 4);
     float *data = stbi_loadf("assets/cave_wall_4k.hdr", &width, &height, &channel, 4);
+    
     if (data)
     {
         size = { 
@@ -2413,7 +2429,11 @@ void VulkanEngine::load_cube_map(){
         _loadedHDRTexture = newer_image;
         VkExtent3D cubemapSize = { 1024, 1024, 1 };
 
-        _cubeMapHDRTexture = create_image(cubemapSize, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_IMAGE_VIEW_TYPE_CUBE,false);
+        uint32_t irrSize = 32;
+        VkExtent3D irradianceMapSize = {irrSize, irrSize, 1};
+
+        _cubeMapHDRTexture = create_image(cubemapSize, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_IMAGE_VIEW_TYPE_CUBE, true);
+        _irradianceMapTexture = create_image(irradianceMapSize, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_IMAGE_VIEW_TYPE_CUBE,false);
     }
     else
     {
@@ -2524,7 +2544,8 @@ void VulkanEngine::render_skybox(VkCommandBuffer cmd, VkRenderingInfo& renderInf
 
     writer.write_buffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     //skybox cube map texture that gets sent to the skybox shader to render the skybox
-    writer.write_image(3, _cubeMapHDRTexture.imageView, _defaultCubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    // writer.write_image(3, _cubeMapHDRTexture.imageView, _defaultCubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    writer.write_image(3, _irradianceMapTexture.imageView, _defaultCubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.update_set(_device, globalDescriptor);
 
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _skyboxPipelineLayout, 0, 1, &globalDescriptor, 0, nullptr);
@@ -2565,6 +2586,12 @@ void VulkanEngine::init_rect_to_cube_pipeline(){
         fmt::print("Error when building the compute shader \n");
     }
 
+    VkShaderModule irradianceShader;
+        if (!vkutil::load_shader_module("shaders/irradiance.comp.spv", _device, &irradianceShader))
+    {
+        fmt::print("Error when building the compute shader \n");
+    }
+
     VkPipelineShaderStageCreateInfo stageinfo{};
     stageinfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     stageinfo.pNext = nullptr;
@@ -2588,12 +2615,24 @@ void VulkanEngine::init_rect_to_cube_pipeline(){
     toCube.data = {};
 
     VK_CHECK(vkCreateComputePipelines(_device,VK_NULL_HANDLE,1,&computePipelineCreateInfo, nullptr, &toCube.pipeline));
+
+    computePipelineCreateInfo.stage.module = irradianceShader;
+    ComputeEffect irradiance;
+    irradiance.layout = _rectToCubePipelineLayout;
+    irradiance.name = "irradiance";
+    irradiance.data = {};
+    
+    VK_CHECK(vkCreateComputePipelines(_device,VK_NULL_HANDLE,1,&computePipelineCreateInfo, nullptr, &irradiance.pipeline));
+
     vkDestroyShaderModule(_device, rectToCubeShader, nullptr);
+    vkDestroyShaderModule(_device, irradianceShader, nullptr);
     _rectToCubeEffect = toCube;
+    _irradianceEffect = irradiance;
     
     _mainDeletionQueue.push_function([=]() {
     		vkDestroyPipelineLayout(_device, _rectToCubePipelineLayout, nullptr);
     		vkDestroyPipeline(_device, toCube.pipeline, nullptr);
+    		vkDestroyPipeline(_device, irradiance.pipeline, nullptr);
 		});
 }
 
@@ -2606,7 +2645,9 @@ void VulkanEngine::convert_to_cube(){
     VK_CHECK(vkBeginCommandBuffer(cmd, &cmdInfo));
     vkutil::transition_image(cmd, _loadedHDRTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
     vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    vkutil::transition_image(cmd, _irradianceMapTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
+    ////////generate the cube map from the hdr texture/////////////
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _rectToCubeEffect.pipeline);
 
     // bind the descriptor set containing the draw image for the compute pipeline
@@ -2621,6 +2662,23 @@ void VulkanEngine::convert_to_cube(){
     uint32_t faceSize = _cubeMapHDRTexture.imageExtent.width; //the width is equal to the height
     vkCmdDispatch(cmd, std::ceil(faceSize/ 16.0), std::ceil(faceSize/ 16.0), 6);
     vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_GENERAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    ///////////////////////////////////////////////////////////////
+
+    //////generate the irradiance map.///////////////////////////
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _irradianceEffect.pipeline);
+
+    // bind the descriptor set containing the draw image for the compute pipeline
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _rectToCubePipelineLayout, 0, 1, &_irradianceDescriptor, 0, nullptr);
+   
+    writer.write_image(0, _cubeMapHDRTexture.imageView, _defaultCubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    writer.write_image(1, _irradianceMapTexture.imageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+    writer.update_set(_device, _irradianceDescriptor);
+
+    uint32_t irrSize = _irradianceMapTexture.imageExtent.width;    
+    vkCmdDispatch(cmd, std::ceil(irrSize/ 16.0), std::ceil(irrSize/ 16.0), 6);
+    vkutil::transition_image(cmd, _irradianceMapTexture.image, VK_IMAGE_LAYOUT_GENERAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    /////////////////////////////////////////////////////
+    
     VK_CHECK(vkEndCommandBuffer(cmd));
 
     VkCommandBufferSubmitInfo cmdSubmitInfo = vkinit::command_buffer_submit_info(cmd);
