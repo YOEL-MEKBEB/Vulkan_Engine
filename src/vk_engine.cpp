@@ -9,7 +9,6 @@
 #include <functional>
 //#include <sys/_types/_u_int32_t.h>
 #include <cstdint>
-#include <sys/_types/_u_int32_t.h>
 #include <vk_initializers.h>
 #include <vk_types.h>
 #include "vk_descriptors.h"
@@ -2752,126 +2751,134 @@ void VulkanEngine::init_rect_to_cube_pipeline(){
 }
 
 void VulkanEngine::convert_to_cube(){
-    
+    /*
     VK_CHECK(vkResetFences(_device, 1, &get_current_frame()._renderFence));
     VkCommandBuffer cmd = get_current_frame()._mainCommandBuffer;
     VK_CHECK(vkResetCommandBuffer(cmd, 0));
     VkCommandBufferBeginInfo cmdInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
     VK_CHECK(vkBeginCommandBuffer(cmd, &cmdInfo));
-    vkutil::transition_image(cmd, _loadedHDRTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-    vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-    vkutil::transition_image(cmd, _irradianceMapTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-    
+    */
 
-    ////////generate the cube map from the hdr texture/////////////
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _rectToCubeEffect.pipeline);
+    immediate_submit([&](VkCommandBuffer cmd) {
+        vkutil::transition_image(cmd, _loadedHDRTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+        vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+        vkutil::transition_image(cmd, _irradianceMapTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
-    // bind the descriptor set containing the draw image for the compute pipeline
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _rectToCubePipelineLayout, 0, 1, &_rectToCubeDescriptor, 0, nullptr);
-   
-    DescriptorWriter writer;
-    writer.write_image(0, _loadedHDRTexture.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(1, _cubeMapHDRTexture.imageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-    writer.update_set(_device, _rectToCubeDescriptor);
 
-    // execute the compute pipeline dispatch. We are using 16x16 workgroup size so we need to divide by it
-    uint32_t faceSize = _cubeMapHDRTexture.imageExtent.width; //the width is equal to the height
-    vkCmdDispatch(cmd, std::ceil(faceSize/ 16.0), std::ceil(faceSize/ 16.0), 6);
-    vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_GENERAL,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6);
-    vkutil::generate_mipmaps(cmd, _cubeMapHDRTexture.image, VkExtent2D{_cubeMapHDRTexture.imageExtent.width, _cubeMapHDRTexture.imageExtent.height}, 6);
+        ////////generate the cube map from the hdr texture/////////////
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _rectToCubeEffect.pipeline);
 
-    //-----generate_mipmaps already converts it to shader read only.
-    // vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        // bind the descriptor set containing the draw image for the compute pipeline
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _rectToCubePipelineLayout, 0, 1, &_rectToCubeDescriptor, 0, nullptr);
 
-    
-    vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
-    // vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
-    
-    ///////////////prefilter map generations//////////////////
+        DescriptorWriter writer;
+        writer.write_image(0, _loadedHDRTexture.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+        writer.write_image(1, _cubeMapHDRTexture.imageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        writer.update_set(_device, _rectToCubeDescriptor);
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _preFilterEffect.pipeline);
+        // execute the compute pipeline dispatch. We are using 16x16 workgroup size so we need to divide by it
+        uint32_t faceSize = _cubeMapHDRTexture.imageExtent.width; //the width is equal to the height
+        vkCmdDispatch(cmd, std::ceil(faceSize / 16.0), std::ceil(faceSize / 16.0), 6);
+        vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6);
+        vkutil::generate_mipmaps(cmd, _cubeMapHDRTexture.image, VkExtent2D{ _cubeMapHDRTexture.imageExtent.width, _cubeMapHDRTexture.imageExtent.height }, 6);
 
-    VkExtent3D cubeMapSize = _cubeMapHDRTexture.imageExtent;
-    AllocatedImage preFilteredImage = create_image(cubeMapSize, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_VIEW_TYPE_CUBE, true);
-    vkutil::transition_image(cmd, preFilteredImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-    
-    int maxMipLevel = 5;
+        //-----generate_mipmaps already converts it to shader read only.
+        // vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6);
 
-    //In Vulkan, you cannot update a Descriptor Set that is already recorded in the command buffer.
-    // When you update it for Mip 1, you invalidate the command you just recorded for Mip 0. Sadness T.T
-    for(int mip = 0; mip < maxMipLevel; mip++){
-        uint32_t mipWidth  = faceSize * std::pow(0.5, mip);
-        uint32_t mipHeight = faceSize * std::pow(0.5, mip);
-        float roughness = (float)mip / (float)(maxMipLevel - 1);
-        
-        //Obtained help from LLM.
-        VkImageViewCreateInfo viewInfo = vkinit::imageview_create_info(
-                preFilteredImage.imageFormat, 
+
+        vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL, 6);
+        // vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL. 6);
+
+        ///////////////prefilter map generations//////////////////
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _preFilterEffect.pipeline);
+
+        VkExtent3D cubeMapSize = _cubeMapHDRTexture.imageExtent;
+        AllocatedImage preFilteredImage = create_image(cubeMapSize, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_VIEW_TYPE_CUBE, true);
+        vkutil::transition_image(cmd, preFilteredImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 6);
+
+        int maxMipLevel = 5;
+
+        //In Vulkan, you cannot update a Descriptor Set that is already recorded in the command buffer.
+        // When you update it for Mip 1, you invalidate the command you just recorded for Mip 0. Sadness T.T
+        for (int mip = 0; mip < maxMipLevel; mip++) {
+            uint32_t mipWidth = faceSize * std::pow(0.5, mip);
+            uint32_t mipHeight = faceSize * std::pow(0.5, mip);
+            float roughness = (float)mip / (float)(maxMipLevel - 1);
+
+            //Obtained help from LLM.
+            VkImageViewCreateInfo viewInfo = vkinit::imageview_create_info(
+                preFilteredImage.imageFormat,
                 preFilteredImage.image, //this will make sure the image view is assigned to the preFilteredImage.
-                VK_IMAGE_ASPECT_COLOR_BIT, 
-                VK_IMAGE_VIEW_TYPE_CUBE 
+                VK_IMAGE_ASPECT_COLOR_BIT,
+                VK_IMAGE_VIEW_TYPE_CUBE
             );
-        viewInfo.subresourceRange.baseMipLevel = mip; // this image view will be associated to this specific mip level.
-        viewInfo.subresourceRange.levelCount = 1;     
-        viewInfo.subresourceRange.layerCount = 6;     
-        
-        VkImageView mipView;
-        VK_CHECK(vkCreateImageView(_device, &viewInfo, nullptr, &mipView));
+            viewInfo.subresourceRange.baseMipLevel = mip; // this image view will be associated to this specific mip level.
+            viewInfo.subresourceRange.levelCount = 1;
+            viewInfo.subresourceRange.layerCount = 6;
 
-        //must bind a different descriptor for each mip level
-        _preFilterDescriptor = globalDescriptorAllocator.allocate(_device, _rectToCubeDescriptorLayout);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _preFilterPipelineLayout, 0, 1, &_preFilterDescriptor, 0, nullptr);
-    
-        DescriptorWriter mipWriter;
-        mipWriter.write_image(0, _cubeMapHDRTexture.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-        mipWriter.write_image(1, mipView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-        mipWriter.update_set(_device, _preFilterDescriptor);
+            VkImageView mipView;
+            VK_CHECK(vkCreateImageView(_device, &viewInfo, nullptr, &mipView));
 
-        vkCmdPushConstants(cmd, _preFilterPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(float), &roughness);
+            //must bind a different descriptor for each mip level
+            _preFilterDescriptor = globalDescriptorAllocator.allocate(_device, _rectToCubeDescriptorLayout);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _preFilterPipelineLayout, 0, 1, &_preFilterDescriptor, 0, nullptr);
 
-        vkCmdDispatch(cmd, std::ceil(mipWidth/16.0), std::ceil(mipHeight/ 16.0), 6);
-        _mainDeletionQueue.push_function([=](){
-             vkDestroyImageView(_device, mipView, nullptr);
-         });
-    
-    }
-    AllocatedImage oldImage = _cubeMapHDRTexture;
-    _mainDeletionQueue.push_function([=](){
-       destroy_image(oldImage);                         
+            DescriptorWriter mipWriter;
+            mipWriter.write_image(0, _cubeMapHDRTexture.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+            mipWriter.write_image(1, mipView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+            mipWriter.update_set(_device, _preFilterDescriptor);
+
+            vkCmdPushConstants(cmd, _preFilterPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(float), &roughness);
+
+            vkCmdDispatch(cmd, std::ceil(mipWidth / 16.0), std::ceil(mipHeight / 16.0), 6);
+            _mainDeletionQueue.push_function([=]() {
+                vkDestroyImageView(_device, mipView, nullptr);
+                });
+
+        }
+        AllocatedImage oldImage = _cubeMapHDRTexture;
+        _mainDeletionQueue.push_function([=]() {
+            destroy_image(oldImage);
+            });
+        _cubeMapHDRTexture = preFilteredImage;
+        vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6);
+        ///////////////////////////////////////////////////////////////
+
+
+        ///////////////generate the brdfLUTTexture////////////////////
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _brdfLUTEffect.pipeline);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _brdfLUTPipelineLayout, 0, 1, &_brdfLUTDescriptor, 0, nullptr);
+        DescriptorWriter brdfWriter;
+        brdfWriter.write_image(0, _brdfLUTTexture.imageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        brdfWriter.update_set(_device, _brdfLUTDescriptor);
+
+        vkutil::transition_image(cmd, _brdfLUTTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+        vkCmdDispatch(cmd, std::ceil(faceSize / 16.0), std::ceil(faceSize / 16.0), 1);
+        vkutil::transition_image(cmd, _brdfLUTTexture.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        /////////////////////////////////////////////////////////////
+
+        //////generate the irradiance map.///////////////////////////
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _irradianceEffect.pipeline);
+
+        // bind the descriptor set containing the draw image for the compute pipeline
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _rectToCubePipelineLayout, 0, 1, &_irradianceDescriptor, 0, nullptr);
+
+        writer.write_image(0, _cubeMapHDRTexture.imageView, _defaultCubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+        writer.write_image(1, _irradianceMapTexture.imageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        writer.update_set(_device, _irradianceDescriptor);
+
+        uint32_t irrSize = _irradianceMapTexture.imageExtent.width;
+        vkCmdDispatch(cmd, std::ceil(irrSize / 16.0), std::ceil(irrSize / 16.0), 6);
+        vkutil::transition_image(cmd, _irradianceMapTexture.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6);
+        /////////////////////////////////////////////////////
+
+
+
     });
-    _cubeMapHDRTexture = preFilteredImage;
-    vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_GENERAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    ///////////////////////////////////////////////////////////////
 
-    
-    ///////////////generate the brdfLUTTexture////////////////////
-    
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _brdfLUTEffect.pipeline);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _brdfLUTPipelineLayout, 0, 1, &_brdfLUTDescriptor, 0, nullptr);
-    DescriptorWriter brdfWriter;
-    brdfWriter.write_image(0, _brdfLUTTexture.imageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-    brdfWriter.update_set(_device, _brdfLUTDescriptor);
-    
-    vkutil::transition_image(cmd, _brdfLUTTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
-    vkCmdDispatch(cmd, std::ceil(faceSize/16.0), std::ceil(faceSize/16.0), 1);
-    vkutil::transition_image(cmd, _brdfLUTTexture.image, VK_IMAGE_LAYOUT_GENERAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    /////////////////////////////////////////////////////////////
-
-    //////generate the irradiance map.///////////////////////////
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _irradianceEffect.pipeline);
-
-    // bind the descriptor set containing the draw image for the compute pipeline
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _rectToCubePipelineLayout, 0, 1, &_irradianceDescriptor, 0, nullptr);
-   
-    writer.write_image(0, _cubeMapHDRTexture.imageView, _defaultCubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    writer.write_image(1, _irradianceMapTexture.imageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-    writer.update_set(_device, _irradianceDescriptor);
-
-    uint32_t irrSize = _irradianceMapTexture.imageExtent.width;    
-    vkCmdDispatch(cmd, std::ceil(irrSize/ 16.0), std::ceil(irrSize/ 16.0), 6);
-    vkutil::transition_image(cmd, _irradianceMapTexture.image, VK_IMAGE_LAYOUT_GENERAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    /////////////////////////////////////////////////////
-    
+    /*
     VK_CHECK(vkEndCommandBuffer(cmd));
 
     VkCommandBufferSubmitInfo cmdSubmitInfo = vkinit::command_buffer_submit_info(cmd);
@@ -2879,4 +2886,6 @@ void VulkanEngine::convert_to_cube(){
     // VkSemaphoreSubmitInfo signalSemaphore = vkinit::semaphore_submit_info(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT, get_current_frame()._renderSemaphore);
     VkSubmitInfo2 submit = vkinit::submit_info(&cmdSubmitInfo, nullptr, nullptr);
     VK_CHECK(vkQueueSubmit2(_graphicsQueue, 1, &submit, get_current_frame()._renderFence));
+    */
+    
 }
