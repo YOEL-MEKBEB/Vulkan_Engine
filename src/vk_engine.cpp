@@ -2439,9 +2439,9 @@ void VulkanEngine::load_cube_map(){
     textures.clear();
     
     // stbi_set_flip_vertically_on_load(true);
-    float *data = stbi_loadf("assets/rogland_moonlit_night_4k.hdr", &width, &height, &channel, 4);
+    // float *data = stbi_loadf("assets/rogland_moonlit_night_4k.hdr", &width, &height, &channel, 4);
     // float *data = stbi_loadf("assets/cave_wall_4k.hdr", &width, &height, &channel, 4);
-    // float *data = stbi_loadf("assets/brown_photostudio_02_4k.hdr", &width, &height, &channel, 4);
+    float *data = stbi_loadf("assets/brown_photostudio_02_4k.hdr", &width, &height, &channel, 4);
     
     if (data)
     {
