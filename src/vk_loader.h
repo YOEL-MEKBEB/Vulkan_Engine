@@ -107,7 +107,9 @@ public:
 
     VulkanEngine* creator;
     int useNormal;
-
+    int useMetalTex;
+    int useAOTex;
+    
     ~LoadedGLTF();
 
     virtual void Draw(const glm::mat4& topMatrix, DrawContext& ctx);

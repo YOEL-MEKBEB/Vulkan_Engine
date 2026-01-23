@@ -177,6 +177,10 @@ struct RenderObject {
     VkDeviceAddress vertexBufferAddress;
 
     int useNormal = 0; //only do normal mapping for objects that have a normal texture.
+    //accounting for cases where the metalRoughnessTexture could be a grayscale image
+    // that only contains the roughness.
+    int useMetalTex = 1; 
+    int useAOTex = 1;
 };
 
 
@@ -395,12 +399,25 @@ public:
 	AllocatedImage _cubeMapHDRTexture;
 	AllocatedImage _loadedHDRTexture;
 	AllocatedImage _irradianceMapTexture;
+	AllocatedImage _brdfLUTTexture;
+
+	VkDescriptorSetLayout _brdfLUTDescriptorLayout;
 	VkDescriptorSetLayout _rectToCubeDescriptorLayout;
+	VkDescriptorSetLayout _preFilterDescriptorLayout;
+
+	VkPipelineLayout _brdfLUTPipelineLayout;
 	VkPipelineLayout _rectToCubePipelineLayout;
-	ComputeEffect _rectToCubeEffect;
+	VkPipelineLayout _preFilterPipelineLayout;
+	
 	VkDescriptorSet _rectToCubeDescriptor;
 	VkDescriptorSet _irradianceDescriptor;
+	VkDescriptorSet _brdfLUTDescriptor;
+	VkDescriptorSet _preFilterDescriptor;
+	
+	ComputeEffect _rectToCubeEffect;
 	ComputeEffect _irradianceEffect;
+	ComputeEffect _preFilterEffect;
+	ComputeEffect _brdfLUTEffect;
 	
 	/////////////cubMap pipeline and scene Data/////////////
 	VkPipelineLayout _skyboxPipelineLayout;

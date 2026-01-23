@@ -16,9 +16,34 @@ layout (location = 8) in flat int useSceneNormal;
 
 layout (location = 0) out vec4 outFragColor;
 
+// layout( push_constant ) uniform constants
+// {
+// 	layout (offset = 72) int useNormal;
+// 	layout (offset = 76) int useMetalTex;
+// 	layout (offset = 80) int useAOTex;
+// } PushConstants;
+struct Vertex {
+
+	vec3 position;
+	float uv_x;
+	vec3 normal;
+	float uv_y;
+	vec4 color;
+	vec4 tangent;
+};
+
+layout(buffer_reference, std430) readonly buffer VertexBuffer{ 
+	Vertex vertices[];
+};
+
+//push constants block
 layout( push_constant ) uniform constants
 {
-	layout (offset = 72) int useNormal;
+	mat4 render_matrix;
+	VertexBuffer vertexBuffer;
+	int useNormal;
+	int useMetalTex;
+	int useAOTex;
 } PushConstants;
 
 
@@ -126,11 +151,13 @@ void main(){
 // /////////////////////cook torrence model ////////////////////////
  
     // float distance    = length(lightPositions - WorldPos);
-    // float attenuation = 1.0 / (distance * distance); // I only have directional light at the moment
+    // float attenuation = 1.0 / (distance *  distance); // I only have directional light at the moment
+
 	vec3 albedo = inColor.rgb * pow(texture(colorTex, inUV).rgb, vec3(2.2));
-    float ao = texture(metalRoughTex, inUV).r;
-    float roughness = materialData.metal_rough_factors.y * texture(metalRoughTex, inUV).g;
-    float metallic = materialData.metal_rough_factors.x * texture(metalRoughTex, inUV).b;
+    float ao = PushConstants.useAOTex == 0 ? 1.0 : texture(metalRoughTex, inUV).r;
+    float roughness = max(materialData.metal_rough_factors.y * texture(metalRoughTex, inUV).g, 0.1);
+    float metallic = PushConstants.useMetalTex == 0 ? 0.0 : materialData.metal_rough_factors.x * texture(metalRoughTex, inUV).b;
+
     
     vec3 radiance = sceneData.sunlightColor.xyz * sceneData.sunlightColor.w;
     vec3 F0 = vec3(0.04); 
@@ -142,25 +169,29 @@ void main(){
 
     vec3 numerator = NDF * G * F;
     float denominator = 4.0 * max(dot(nTangent, viewDir), 0.0) * max(dot(nTangent, lightDir), 0.0)  + 0.0001;
-    vec3 specular = numerator / denominator;  
+    vec3 specularLo = numerator / denominator;  
 
-    vec3 kS = F;
-    vec3 kD = vec3(1.0) - kS;
+    // vec3 kS = F;
+    // vec3 kD = vec3(1.0) - kS;
 
-    kD *= 1.0 - metallic;	
+    // kD *= 1.0 - metallic;	
 
   
-    float NdotL = max(dot(nTangent, lightDir), 0.0);        
-    vec3 Lo = (kD * albedo / PI + specular) * radiance * NdotL;
 
-
-    kS = fresnelSchlickRoughness(max(dot(nTangent, viewDir), 0.0), F0, roughness);//no halfway vector for irradiance map
-    kD = 1.0 - kS;
-    vec3 irradiance = texture(skybox, nTangent).rgb;
-    vec3 diffuse    = irradiance * albedo;
-    vec3 ambient    = (kD * diffuse) * ao; 
+    F = fresnelSchlickRoughness(max(dot(nTangent, viewDir), 0.0), F0, roughness);
+   
+    vec3 kS = F;
+    vec3 kD = 1.0 - kS;
+    kD *= 1.0 - metallic;
+    vec3 irradiance = texture(irradianceMap, nTangent).rgb;
+    // vec3 ambient    = (kD * diffuse) * ao; 
     // vec3 ambient = vec3(0.03) * albedo * ao;
-    
+
+    vec3 reflection = reflect(-viewDir, nTangent);
+    const float MAX_REFLECTION_LOD = 4.0;
+    vec3 prefilteredColor = textureLod(skybox, reflection,  roughness * MAX_REFLECTION_LOD).rgb;   //skybox contains the prefilter map 
+    vec2 envBRDF  = texture(brdfLUT, vec2(max(dot(nTangent, viewDir), 0.0), roughness)).rg;
+        
     float shadow = 0.0;
     vec3 p = lightview_position.xyz/lightview_position.w;
     vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
@@ -175,6 +206,13 @@ void main(){
     }
     
     shadow /= 9.0;
+    vec3 diffuse = irradiance * albedo;
+    vec3 specular = prefilteredColor * (F * envBRDF.x + envBRDF.y);
+    vec3 ambient = (kD * diffuse + specular) * ao; 
+    // vec3 ambient    = (kD * diffuse + specular); 
+
+    float NdotL = max(dot(nTangent, lightDir), 0.0);        
+    vec3 Lo = (kD * albedo / PI + specular) * radiance * NdotL;
     vec3 finalColor = ambient + Lo * shadow; 
 /////////////////////cook torrence model ////////////////////////
 

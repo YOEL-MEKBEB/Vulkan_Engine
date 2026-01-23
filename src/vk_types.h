@@ -75,6 +75,9 @@ struct GPUMeshBuffers {
 struct GPUDrawPushConstants {
     glm::mat4 worldMatrix;
     VkDeviceAddress vertexBuffer;
+    int useNormal;
+    int useMetalTex;
+    int useAOTex;
 };
 
 //this enum class was created with the intent of
@@ -140,7 +143,9 @@ struct Node : public IRenderable {
     glm::mat4 worldTransform;
 
     int useNormal = 0;
-
+    int useMetalTex = 1;
+    int useAOTex = 1;
+    
     //recursive propagation of transforming an object and it's children
     void refreshTransform(const glm::mat4& parentMatrix)
     {

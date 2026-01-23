@@ -8,5 +8,5 @@ layout (location = 0) out vec4 FragColor;
 
 void main()
 {    
-    FragColor = texture(skybox, TexCoords);
+    FragColor = textureLod(skybox, TexCoords, 0);
 }

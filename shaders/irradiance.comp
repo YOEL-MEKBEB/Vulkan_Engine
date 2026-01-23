@@ -69,7 +69,7 @@ void main()
             vec3 sampleVec = tangentSample.x * right + tangentSample.y * up + tangentSample.z * normal; 
 
             //clamping it because starry skies are too high frequency
-            vec3 sampledColor = texture(hdrCubeMap, sampleVec).rgb;
+            vec3 sampledColor = textureLod(hdrCubeMap, sampleVec, 2).rgb;
             sampledColor = min(sampledColor, vec3(500.0));
 
             irradiance += sampledColor * cos(theta) * sin(theta);
