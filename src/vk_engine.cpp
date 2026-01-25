@@ -208,9 +208,12 @@ void VulkanEngine::cleanup(){
 //main rendering function to display an image on to the screen
 void VulkanEngine::draw(){
 
+    auto start = std::chrono::system_clock::now();
     //sets the parameters for updating the scenes.
     update_scene();
-
+    auto end = std::chrono::system_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+    stats.scene_update_time = elapsed.count() / 1000.f;
     
     // wait until the gpu has finished rendering the last frame. Timeout of 1
     // second
@@ -1393,6 +1396,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
         pushConstants.useNormal = draw.useNormal;
         pushConstants.useMetalTex = draw.useMetalTex;
         pushConstants.useAOTex = draw.useAOTex;
+        pushConstants.useORM = draw.useORM;
         
         vkCmdPushConstants(cmd,draw.material->pipeline->layout ,VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
         // vkCmdPushConstants(cmd, draw.material->pipeline->layout, VK_SHADER_STAGE_FRAGMENT_BIT,sizeof(GPUDrawPushConstants), sizeof(int), &draw.useNormal);
@@ -1796,8 +1800,8 @@ void VulkanEngine::init_default_data() {
     materialResources.metalRoughSampler = _defaultSamplerLinear;
     materialResources.normalImage = _gravelNormal;
     materialResources.normalSampler = _defaultSamplerLinear;
-    // materialResources.skyboxImage = _cubeMapTextures;
-    // materialResources.cubeSampler = _defaultCubeSampler;
+    materialResources.ambientImage = _whiteImage;
+    materialResources.ambientSampler = _defaultSamplerLinear;
 
     //set the uniform buffer for the material data
     materialConstants = create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -1967,6 +1971,7 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine){
     builder.add_binding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     builder.add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     builder.add_binding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    builder.add_binding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
     //taking advantage of the build pipeline function for the cubeMap.
     // builder.add_binding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
@@ -2029,7 +2034,7 @@ MaterialInstance GLTFMetallic_Roughness::write_material(VkDevice device, Materia
     writer.write_image(1, resources.colorImage.imageView, resources.colorSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.write_image(2, resources.metalRoughImage.imageView, resources.metalRoughSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.write_image(3, resources.normalImage.imageView, resources.normalSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    // writer.write_image(4, resources.skyboxImage.imageView, resources.cubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    writer.write_image(4, resources.ambientImage.imageView, resources.ambientSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     
     writer.update_set(device, matData.materialSet);
 
@@ -2065,6 +2070,8 @@ void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx){
         def.useNormal = useNormal;
         def.useMetalTex = useMetalTex;
         def.useAOTex = useAOTex;
+        def.useORM = useORM;
+        // fmt::println("entered here {}", useAOTex);
 
         if(s.material->data.passType == MaterialPass::Transparent){
             ctx.TransparentSurfaces.push_back(def);
@@ -2092,9 +2099,11 @@ void VulkanEngine::update_scene(){
     int useNormal = 1;
     int useMetalTex = 0;
     int useAOTex = 0;
+    int useORM = 0;
     loadedNodes["Suzanne"]->useNormal = useNormal;
     loadedNodes["Suzanne"]->useMetalTex = useMetalTex;
     loadedNodes["Suzanne"]->useAOTex = useAOTex;
+    loadedNodes["Suzanne"]->useORM = useORM;
 
     // fmt::print("suzanne normal : {}\n", loadedNodes["Suzanne"]->useNormal);
     loadedNodes["Suzanne"]->Draw(glm::mat4{1.f}, mainDrawContext);
@@ -2148,6 +2157,7 @@ void VulkanEngine::update_scene(){
     loadedNodes["Cube"]->useNormal = useNormal;
     loadedNodes["Cube"]->useMetalTex = useMetalTex;
     loadedNodes["Cube"]->useAOTex = useAOTex;
+    loadedNodes["Cube"]->useORM = useORM;
     loadedNodes["Cube"]->Draw(translation * scale, mainDrawContext);
     loadedNodes["Cube"]->Draw(translation * scale, lightDrawContext);
         
@@ -2439,8 +2449,8 @@ void VulkanEngine::load_cube_map(){
     
     // stbi_set_flip_vertically_on_load(true);
     // float *data = stbi_loadf("assets/rogland_moonlit_night_4k.hdr", &width, &height, &channel, 4);
-    // float *data = stbi_loadf("assets/cave_wall_4k.hdr", &width, &height, &channel, 4);
-    float *data = stbi_loadf("assets/brown_photostudio_02_4k.hdr", &width, &height, &channel, 4);
+    float *data = stbi_loadf("assets/cave_wall_4k.hdr", &width, &height, &channel, 4);
+    // float *data = stbi_loadf("assets/brown_photostudio_02_4k.hdr", &width, &height, &channel, 4);
     
     if (data)
     {

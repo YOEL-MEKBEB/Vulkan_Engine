@@ -44,6 +44,7 @@ layout( push_constant ) uniform constants
 	int useNormal;
 	int useMetalTex;
 	int useAOTex;
+	int useORM;
 } PushConstants;
 
 
@@ -58,7 +59,7 @@ float DistributionGGX(vec3 N, vec3 H, float roughness)
 	
     float num   = a2;
     float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    denom = PI * denom * denom;
+    denom = PI * denom * denom + 0.001;
 	
     return num / denom;
 }
@@ -69,7 +70,7 @@ float GeometrySchlickGGX(float NdotV, float roughness)
     float k = (r*r) / 8.0;
 
     float num   = NdotV;
-    float denom = NdotV * (1.0 - k) + k;
+    float denom = NdotV * (1.0 - k) + k + 0.001;
 	
     return num / denom;
 }
@@ -99,6 +100,7 @@ void main(){
     vec3 nTangent;
     if(PushConstants.useNormal == 0 && useSceneNormal == 0){
         nTangent = vec3(0, 0, 1);
+        // nTangent = normalize(inNormal);
     }else{
         nTangent = texture(normalTex, inUV).rgb;
         nTangent = normalize(nTangent * 2.0 - 1.0);
@@ -154,7 +156,7 @@ void main(){
     // float attenuation = 1.0 / (distance *  distance); // I only have directional light at the moment
 
 	vec3 albedo = inColor.rgb * pow(texture(colorTex, inUV).rgb, vec3(2.2));
-    float ao = PushConstants.useAOTex == 0 ? 1.0 : texture(metalRoughTex, inUV).r;
+    float ao = PushConstants.useORM == 0 ? (PushConstants.useAOTex == 0 ? 1.0 : texture(aoTex, inUV).r) : texture(metalRoughTex, inUV).r; //most disgusting ternary I've created so far. I'm definitely going to forget how this works in the future.
     float roughness = max(materialData.metal_rough_factors.y * texture(metalRoughTex, inUV).g, 0.1);
     float metallic = PushConstants.useMetalTex == 0 ? 0.0 : materialData.metal_rough_factors.x * texture(metalRoughTex, inUV).b;
 
@@ -214,6 +216,7 @@ void main(){
     float NdotL = max(dot(nTangent, lightDir), 0.0);        
     vec3 Lo = (kD * albedo / PI + specular) * radiance * NdotL;
     vec3 finalColor = ambient + Lo * shadow; 
+    // vec3 finalColor = ambient + Lo; 
 /////////////////////cook torrence model ////////////////////////
 
     float gamma = 2.2;

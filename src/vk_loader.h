@@ -106,9 +106,10 @@ public:
     AllocatedBuffer materialDataBuffer;
 
     VulkanEngine* creator;
-    int useNormal;
-    int useMetalTex;
-    int useAOTex;
+    int useNormal = 0;
+    int useMetalTex = 0;
+    int useAOTex = 0;
+    int useORM = 0;
     
     ~LoadedGLTF();
 

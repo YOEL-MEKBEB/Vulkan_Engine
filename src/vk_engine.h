@@ -143,6 +143,8 @@ struct GLTFMetallic_Roughness {
 		uint32_t dataBufferOffset;
 		AllocatedImage normalImage;
 		VkSampler normalSampler;
+		AllocatedImage ambientImage;
+		VkSampler ambientSampler;
 	};
 
 	DescriptorWriter writer;
@@ -181,6 +183,7 @@ struct RenderObject {
     // that only contains the roughness.
     int useMetalTex = 1; 
     int useAOTex = 1;
+    int useORM = 0;
 };
 
 

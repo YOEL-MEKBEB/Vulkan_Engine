@@ -38,6 +38,7 @@ layout( push_constant ) uniform constants
 	int useNormal;
 	int useMetalTex;
 	int useAOTex;
+	int useORM;
 } PushConstants;
 
 void main() 

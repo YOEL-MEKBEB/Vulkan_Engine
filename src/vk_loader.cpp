@@ -1,4 +1,6 @@
 #include "stb_image.h"
+#include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <vk_loader.h>
 
@@ -273,6 +275,68 @@ std::optional<AllocatedImage> load_image(VulkanEngine* engine, fastgltf::Asset& 
    
 }
 
+// Helper to pack separate Occlusion and Metallic-Roughness images into one ORM texture
+std::optional<AllocatedImage> load_and_pack_orm(VulkanEngine* engine, fastgltf::Asset& asset, size_t metalRoughIndex, size_t aoIndex) {
+    
+    // 1. Get the data sources for both images
+    fastgltf::Image& metalRoughImg = asset.images[metalRoughIndex];
+    fastgltf::Image& aoImg = asset.images[aoIndex];
+
+    int wMR, hMR, cMR;
+    int wAO, hAO, cAO;
+    unsigned char* dataMR = nullptr;
+    unsigned char* dataAO = nullptr;
+
+    // 2. Load Metallic-Roughness (Force 4 channels: RGBA)
+    // We reuse the logic from your existing load_image via a temporary lambda or direct STBI call
+    // For brevity, assuming direct STBI load from memory/buffer view similar to your load_image logic:
+    
+    // ... (You would copy the extraction logic from load_image here to get the raw bytes) ...
+    // For this example, let's assume you extract the raw bytes into a vector 'bytesMR' and 'bytesAO'
+    // using the visitor pattern found in your load_image function.
+    
+    // Simplification: Let's assume we grabbed the raw pointers using the same visitor logic:
+    // This part requires you to extract the raw buffer view logic from your load_image function 
+    // or make a helper that returns 'unsigned char*' instead of 'AllocatedImage'.
+    
+    // 3. CHECK SIZES
+    if (wMR != wAO || hMR != hAO) {
+        fmt::print("Error: AO and MetalRoughness textures must be the same size to pack!\n");
+        // Clean up and return empty
+        if (dataMR) stbi_image_free(dataMR);
+        if (dataAO) stbi_image_free(dataAO);
+        return {}; 
+    }
+
+    // 4. PACKING LOOP (The Magic)
+    // Size is width * height * 4 channels
+    size_t size = wMR * hMR * 4;
+    
+    for (size_t i = 0; i < size; i += 4) {
+        // ORM Format:
+        // R = Occlusion (Take from AO image Red channel)
+        // G = Roughness (Keep from MR image Green channel)
+        // B = Metallic  (Keep from MR image Blue channel)
+        // A = 1.0       (Keep from MR or set to 255)
+
+        // Assign AO's Red channel to MR's Red channel
+        dataMR[i + 0] = dataAO[i + 0]; 
+    }
+
+    // 5. Upload the modified dataMR to GPU
+    VkExtent3D imageSize;
+    imageSize.width = wMR;
+    imageSize.height = hMR;
+    imageSize.depth = 1;
+
+    AllocatedImage newImage = engine->create_image(dataMR, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_VIEW_TYPE_2D, true);
+
+    // 6. Cleanup CPU memory
+    stbi_image_free(dataMR);
+    stbi_image_free(dataAO);
+
+    return newImage;
+}
 
 std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::filesystem::path filePath){
     fmt::print("Loading GLTF: {}\n", filePath.string());
@@ -339,7 +403,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::f
 
     // Initialize the descriptor pool for the scene
     std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes = { 
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 },
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4 },
         { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 },
         { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 }
     };
@@ -415,10 +479,17 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::f
         materialResources.metalRoughSampler = engine->_defaultSamplerLinear;
         materialResources.normalImage = engine->_whiteImage;
         materialResources.normalSampler = engine->_defaultSamplerLinear;
+        materialResources.ambientImage = engine->_whiteImage;
+        materialResources.ambientSampler = engine->_defaultSamplerLinear;
 
         // set the uniform buffer for the material data
         materialResources.dataBuffer = file.materialDataBuffer.buffer;
         materialResources.dataBufferOffset = data_index * sizeof(GLTFMetallic_Roughness::MaterialConstants);
+
+        ///variables that will be used for texture packing
+        size_t metallicImg;
+        size_t metallicSampler;
+        
         // grab textures from gltf file
         if (mat.pbrData.baseColorTexture.has_value()) {
             size_t img = gltf.textures[mat.pbrData.baseColorTexture.value().textureIndex].imageIndex.value();
@@ -433,15 +504,37 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::f
 
             materialResources.normalImage = images[img];
             materialResources.normalSampler = file.samplers[sampler];
+            scene->useNormal = 1;
         }
         if (mat.pbrData.metallicRoughnessTexture.has_value()) {
 
-            // 2. Access the texture index from the 'metallicRoughnessTexture' object
-            size_t img = gltf.textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex].imageIndex.value();
-            size_t sampler = gltf.textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex].samplerIndex.value();
+                // 2. Access the texture index from the 'metallicRoughnessTexture' object
+            metallicImg = gltf.textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex].imageIndex.value();
+            metallicSampler = gltf.textures[mat.pbrData.metallicRoughnessTexture.value().textureIndex].samplerIndex.value();
 
-            materialResources.metalRoughImage = images[img];
-            materialResources.metalRoughSampler = file.samplers[sampler];
+            materialResources.metalRoughImage = images[metallicImg];
+            materialResources.metalRoughSampler = file.samplers[metallicSampler];
+            
+            scene->useMetalTex = 1;
+        }
+        if (mat.occlusionTexture.has_value()){
+
+            // checking if the ambient occlusion is inside the metallicRoughness texture for ORM format
+            if (mat.pbrData.metallicRoughnessTexture.has_value()) {
+                if (mat.occlusionTexture->textureIndex == mat.pbrData.metallicRoughnessTexture->textureIndex) {
+                    scene->useORM = 1;
+                }
+            }else{
+                
+            size_t img = gltf.textures[mat.occlusionTexture.value().textureIndex].imageIndex.value();
+            size_t sampler = gltf.textures[mat.occlusionTexture.value().textureIndex].samplerIndex.value();
+
+            materialResources.ambientImage = images[img];
+            materialResources.ambientSampler = file.samplers[sampler];
+            scene->useAOTex = 1;
+            }
+              //TODO learn how to do texture packing to create ORM.          
+
         }
         // build material
         newMat->data = engine->metalRoughMaterial.write_material(engine->_device, passType, materialResources, file.descriptorPool);
@@ -571,7 +664,14 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::f
         // find if the node has a mesh, and if it does hook it to the mesh pointer and allocate it with the meshnode class
         if (node.meshIndex.has_value()) {
             newNode = std::make_shared<MeshNode>();
-            static_cast<MeshNode*>(newNode.get())->mesh = meshes[*node.meshIndex];
+            auto meshNode = static_cast<MeshNode*>(newNode.get());
+            meshNode->mesh = meshes[*node.meshIndex];
+            // static_cast<MeshNode*>(newNode.get())->mesh = meshes[*node.meshIndex];
+            meshNode->useAOTex = scene->useAOTex;
+            meshNode->useMetalTex = scene->useMetalTex;
+            meshNode->useNormal = scene->useNormal;
+            meshNode->useORM = scene->useORM;
+            
         } else {
             newNode = std::make_shared<Node>();
         }
