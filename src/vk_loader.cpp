@@ -275,69 +275,6 @@ std::optional<AllocatedImage> load_image(VulkanEngine* engine, fastgltf::Asset& 
    
 }
 
-// Helper to pack separate Occlusion and Metallic-Roughness images into one ORM texture
-std::optional<AllocatedImage> load_and_pack_orm(VulkanEngine* engine, fastgltf::Asset& asset, size_t metalRoughIndex, size_t aoIndex) {
-    
-    // 1. Get the data sources for both images
-    fastgltf::Image& metalRoughImg = asset.images[metalRoughIndex];
-    fastgltf::Image& aoImg = asset.images[aoIndex];
-
-    int wMR, hMR, cMR;
-    int wAO, hAO, cAO;
-    unsigned char* dataMR = nullptr;
-    unsigned char* dataAO = nullptr;
-
-    // 2. Load Metallic-Roughness (Force 4 channels: RGBA)
-    // We reuse the logic from your existing load_image via a temporary lambda or direct STBI call
-    // For brevity, assuming direct STBI load from memory/buffer view similar to your load_image logic:
-    
-    // ... (You would copy the extraction logic from load_image here to get the raw bytes) ...
-    // For this example, let's assume you extract the raw bytes into a vector 'bytesMR' and 'bytesAO'
-    // using the visitor pattern found in your load_image function.
-    
-    // Simplification: Let's assume we grabbed the raw pointers using the same visitor logic:
-    // This part requires you to extract the raw buffer view logic from your load_image function 
-    // or make a helper that returns 'unsigned char*' instead of 'AllocatedImage'.
-    
-    // 3. CHECK SIZES
-    if (wMR != wAO || hMR != hAO) {
-        fmt::print("Error: AO and MetalRoughness textures must be the same size to pack!\n");
-        // Clean up and return empty
-        if (dataMR) stbi_image_free(dataMR);
-        if (dataAO) stbi_image_free(dataAO);
-        return {}; 
-    }
-
-    // 4. PACKING LOOP (The Magic)
-    // Size is width * height * 4 channels
-    size_t size = wMR * hMR * 4;
-    
-    for (size_t i = 0; i < size; i += 4) {
-        // ORM Format:
-        // R = Occlusion (Take from AO image Red channel)
-        // G = Roughness (Keep from MR image Green channel)
-        // B = Metallic  (Keep from MR image Blue channel)
-        // A = 1.0       (Keep from MR or set to 255)
-
-        // Assign AO's Red channel to MR's Red channel
-        dataMR[i + 0] = dataAO[i + 0]; 
-    }
-
-    // 5. Upload the modified dataMR to GPU
-    VkExtent3D imageSize;
-    imageSize.width = wMR;
-    imageSize.height = hMR;
-    imageSize.depth = 1;
-
-    AllocatedImage newImage = engine->create_image(dataMR, imageSize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_VIEW_TYPE_2D, true);
-
-    // 6. Cleanup CPU memory
-    stbi_image_free(dataMR);
-    stbi_image_free(dataAO);
-
-    return newImage;
-}
-
 std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::filesystem::path filePath){
     fmt::print("Loading GLTF: {}\n", filePath.string());
 
@@ -463,7 +400,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::f
         constants.emissive_factors.x = mat.emissiveFactor[0];
         constants.emissive_factors.y = mat.emissiveFactor[1];
         constants.emissive_factors.z = mat.emissiveFactor[2];
-        constants.emissive_factors.w = mat.emissiveFactor[3];
+        constants.emissive_factors.w = 0.0f;
 
 
         constants.metal_rough_factors.x = mat.pbrData.metallicFactor;
