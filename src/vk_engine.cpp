@@ -2795,6 +2795,7 @@ void VulkanEngine::convert_to_cube(){
         writer.write_image(0, _loadedHDRTexture.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
         writer.write_image(1, _cubeMapHDRTexture.imageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
         writer.update_set(_device, _rectToCubeDescriptor);
+        writer.clear();
 
         // execute the compute pipeline dispatch. We are using 16x16 workgroup size so we need to divide by it
         uint32_t faceSize = _cubeMapHDRTexture.imageExtent.width; //the width is equal to the height
@@ -2848,6 +2849,7 @@ void VulkanEngine::convert_to_cube(){
             mipWriter.write_image(0, _cubeMapHDRTexture.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
             mipWriter.write_image(1, mipView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
             mipWriter.update_set(_device, _preFilterDescriptor);
+            mipWriter.clear();
 
             vkCmdPushConstants(cmd, _preFilterPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(float), &roughness);
 
@@ -2873,6 +2875,7 @@ void VulkanEngine::convert_to_cube(){
         DescriptorWriter brdfWriter;
         brdfWriter.write_image(0, _brdfLUTTexture.imageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
         brdfWriter.update_set(_device, _brdfLUTDescriptor);
+        brdfWriter.clear();
 
         vkutil::transition_image(cmd, _brdfLUTTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
         vkCmdDispatch(cmd, std::ceil(faceSize / 16.0), std::ceil(faceSize / 16.0), 1);
@@ -2888,6 +2891,7 @@ void VulkanEngine::convert_to_cube(){
         writer.write_image(0, _cubeMapHDRTexture.imageView, _defaultCubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
         writer.write_image(1, _irradianceMapTexture.imageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
         writer.update_set(_device, _irradianceDescriptor);
+        writer.clear();
 
         uint32_t irrSize = _irradianceMapTexture.imageExtent.width;
         vkCmdDispatch(cmd, std::ceil(irrSize / 16.0), std::ceil(irrSize / 16.0), 6);
