@@ -10,7 +10,6 @@ layout (location = 3) in vec3 inPositionWorld;
 layout (location = 4) in vec4 lightview_position;
 
 layout (location = 0) out vec4 outFragColor;
-layout (set = 0, binding = 2) uniform sampler2D shadowMap;
 
 void main(){
     float lightValue = max(dot(inNormal, sceneData.sunlightDirection.xyz), 0.1f);
