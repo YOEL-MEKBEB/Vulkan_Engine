@@ -110,6 +110,7 @@ public:
     int useMetalTex = 0;
     int useAOTex = 0;
     int useORM = 0;
+    int useEmissionTex = 0;
     
     ~LoadedGLTF();
 

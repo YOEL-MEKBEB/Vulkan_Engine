@@ -79,6 +79,7 @@ struct GPUDrawPushConstants {
     int useMetalTex;
     int useAOTex;
     int useORM;
+    int useEmissionTex;
 };
 
 //this enum class was created with the intent of
@@ -147,6 +148,7 @@ struct Node : public IRenderable {
     int useMetalTex = 1;
     int useAOTex = 1;
     int useORM = 0;
+    int useEmissionTex = 0;
     
     //recursive propagation of transforming an object and it's children
     void refreshTransform(const glm::mat4& parentMatrix)

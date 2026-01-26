@@ -130,8 +130,9 @@ struct GLTFMetallic_Roughness {
 	struct MaterialConstants {
 		glm::vec4 colorFactors;
 		glm::vec4 metal_rough_factors;
+		glm::vec4 emissive_factors;
 		//padding, we need it anyway for uniform buffers
-		glm::vec4 extra[14];
+		glm::vec4 extra[10];
 	};
 
 	struct MaterialResources {
@@ -145,6 +146,8 @@ struct GLTFMetallic_Roughness {
 		VkSampler normalSampler;
 		AllocatedImage ambientImage;
 		VkSampler ambientSampler;
+		AllocatedImage emissiveImage;
+		VkSampler emissiveSampler;
 	};
 
 	DescriptorWriter writer;
@@ -184,6 +187,7 @@ struct RenderObject {
     int useMetalTex = 1; 
     int useAOTex = 1;
     int useORM = 0;
+    int useEmissionTex = 0;
 };
 
 

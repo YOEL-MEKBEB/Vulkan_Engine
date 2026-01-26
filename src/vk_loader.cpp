@@ -403,7 +403,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::f
 
     // Initialize the descriptor pool for the scene
     std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes = { 
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4 },
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5 },
         { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 },
         { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 }
     };
@@ -460,6 +460,11 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::f
         constants.colorFactors.y = mat.pbrData.baseColorFactor[1];
         constants.colorFactors.z = mat.pbrData.baseColorFactor[2];
         constants.colorFactors.w = mat.pbrData.baseColorFactor[3];
+        constants.emissive_factors.x = mat.emissiveFactor[0];
+        constants.emissive_factors.y = mat.emissiveFactor[1];
+        constants.emissive_factors.z = mat.emissiveFactor[2];
+        constants.emissive_factors.w = mat.emissiveFactor[3];
+
 
         constants.metal_rough_factors.x = mat.pbrData.metallicFactor;
         constants.metal_rough_factors.y = mat.pbrData.roughnessFactor;
@@ -481,6 +486,8 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::f
         materialResources.normalSampler = engine->_defaultSamplerLinear;
         materialResources.ambientImage = engine->_whiteImage;
         materialResources.ambientSampler = engine->_defaultSamplerLinear;
+        materialResources.emissiveImage = engine->_whiteImage;
+        materialResources.emissiveSampler = engine->_defaultSamplerLinear;
 
         // set the uniform buffer for the material data
         materialResources.dataBuffer = file.materialDataBuffer.buffer;
@@ -535,6 +542,18 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::f
             }
               //TODO learn how to do texture packing to create ORM.          
 
+        }
+
+        if (mat.emissiveTexture.has_value()) {
+
+                // 2. Access the texture index from the 'metallicRoughnessTexture' object
+            size_t img = gltf.textures[mat.emissiveTexture.value().textureIndex].imageIndex.value();
+            size_t sampler = gltf.textures[mat.emissiveTexture.value().textureIndex].samplerIndex.value();
+
+            materialResources.emissiveImage = images[img];
+            materialResources.emissiveSampler = file.samplers[sampler];
+            
+            scene->useEmissionTex = 1;
         }
         // build material
         newMat->data = engine->metalRoughMaterial.write_material(engine->_device, passType, materialResources, file.descriptorPool);
@@ -671,6 +690,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::f
             meshNode->useMetalTex = scene->useMetalTex;
             meshNode->useNormal = scene->useNormal;
             meshNode->useORM = scene->useORM;
+            meshNode->useEmissionTex = scene->useEmissionTex;
             
         } else {
             newNode = std::make_shared<Node>();

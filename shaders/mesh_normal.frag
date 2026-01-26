@@ -45,6 +45,7 @@ layout( push_constant ) uniform constants
 	int useMetalTex;
 	int useAOTex;
 	int useORM;
+	int useEmissive;
 } PushConstants;
 
 
@@ -159,8 +160,8 @@ void main(){
     float ao = PushConstants.useORM == 0 ? (PushConstants.useAOTex == 0 ? 1.0 : texture(aoTex, inUV).r) : texture(metalRoughTex, inUV).r; //most disgusting ternary I've created so far. I'm definitely going to forget how this works in the future.
     float roughness = max(materialData.metal_rough_factors.y * texture(metalRoughTex, inUV).g, 0.1);
     float metallic = PushConstants.useMetalTex == 0 ? 0.0 : materialData.metal_rough_factors.x * texture(metalRoughTex, inUV).b;
+    vec3 emissive = PushConstants.useEmissive == 0 ? vec3(0.0) : materialData.emissive_factors.rgb * texture(emissiveTex, inUV).rgb;
 
-    
     vec3 radiance = sceneData.sunlightColor.xyz * sceneData.sunlightColor.w;
     vec3 F0 = vec3(0.04); 
     F0 = mix(F0, albedo, metallic);
@@ -215,8 +216,8 @@ void main(){
 
     float NdotL = max(dot(nTangent, lightDir), 0.0);        
     vec3 Lo = (kD * albedo / PI + specular) * radiance * NdotL;
-    vec3 finalColor = ambient + Lo * shadow; 
-    // vec3 finalColor = ambient + Lo; 
+    vec3 finalColor = ambient + Lo * shadow + emissive; 
+    // vec3 finalColor = emissive; 
 /////////////////////cook torrence model ////////////////////////
 
     float gamma = 2.2;

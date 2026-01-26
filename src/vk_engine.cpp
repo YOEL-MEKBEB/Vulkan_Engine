@@ -1397,6 +1397,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
         pushConstants.useMetalTex = draw.useMetalTex;
         pushConstants.useAOTex = draw.useAOTex;
         pushConstants.useORM = draw.useORM;
+        pushConstants.useEmissionTex = draw.useEmissionTex;
         
         vkCmdPushConstants(cmd,draw.material->pipeline->layout ,VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
         // vkCmdPushConstants(cmd, draw.material->pipeline->layout, VK_SHADER_STAGE_FRAGMENT_BIT,sizeof(GPUDrawPushConstants), sizeof(int), &draw.useNormal);
@@ -1802,6 +1803,8 @@ void VulkanEngine::init_default_data() {
     materialResources.normalSampler = _defaultSamplerLinear;
     materialResources.ambientImage = _whiteImage;
     materialResources.ambientSampler = _defaultSamplerLinear;
+    materialResources.emissiveImage = _whiteImage;
+    materialResources.emissiveSampler = _defaultSamplerLinear;
 
     //set the uniform buffer for the material data
     materialConstants = create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -1810,7 +1813,8 @@ void VulkanEngine::init_default_data() {
     GLTFMetallic_Roughness::MaterialConstants* sceneUniformData = (GLTFMetallic_Roughness::MaterialConstants*)materialConstants.allocation->GetMappedData();
     sceneUniformData->colorFactors = colorFactors;
     sceneUniformData->metal_rough_factors = metal_rough_factors;
-
+    sceneUniformData->emissive_factors = glm::vec4(0.0);
+    
     _mainDeletionQueue.push_function([=, this]() {
         destroy_buffer(materialConstants);
     });
@@ -1972,6 +1976,7 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine){
     builder.add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     builder.add_binding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     builder.add_binding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    builder.add_binding(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
     //taking advantage of the build pipeline function for the cubeMap.
     // builder.add_binding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
@@ -2035,6 +2040,7 @@ MaterialInstance GLTFMetallic_Roughness::write_material(VkDevice device, Materia
     writer.write_image(2, resources.metalRoughImage.imageView, resources.metalRoughSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.write_image(3, resources.normalImage.imageView, resources.normalSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.write_image(4, resources.ambientImage.imageView, resources.ambientSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    writer.write_image(5, resources.emissiveImage.imageView, resources.emissiveSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     
     writer.update_set(device, matData.materialSet);
 
@@ -2071,6 +2077,7 @@ void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx){
         def.useMetalTex = useMetalTex;
         def.useAOTex = useAOTex;
         def.useORM = useORM;
+        def.useEmissionTex = useEmissionTex;
         // fmt::println("entered here {}", useAOTex);
 
         if(s.material->data.passType == MaterialPass::Transparent){
@@ -2100,10 +2107,12 @@ void VulkanEngine::update_scene(){
     int useMetalTex = 0;
     int useAOTex = 0;
     int useORM = 0;
+    int useEmissionTex = 0;
     loadedNodes["Suzanne"]->useNormal = useNormal;
     loadedNodes["Suzanne"]->useMetalTex = useMetalTex;
     loadedNodes["Suzanne"]->useAOTex = useAOTex;
     loadedNodes["Suzanne"]->useORM = useORM;
+    loadedNodes["Suzanne"]->useEmissionTex = useEmissionTex;
 
     // fmt::print("suzanne normal : {}\n", loadedNodes["Suzanne"]->useNormal);
     loadedNodes["Suzanne"]->Draw(glm::mat4{1.f}, mainDrawContext);
@@ -2158,6 +2167,7 @@ void VulkanEngine::update_scene(){
     loadedNodes["Cube"]->useMetalTex = useMetalTex;
     loadedNodes["Cube"]->useAOTex = useAOTex;
     loadedNodes["Cube"]->useORM = useORM;
+    loadedNodes["Cube"]->useEmissionTex = useEmissionTex;
     loadedNodes["Cube"]->Draw(translation * scale, mainDrawContext);
     loadedNodes["Cube"]->Draw(translation * scale, lightDrawContext);
         
@@ -2449,8 +2459,8 @@ void VulkanEngine::load_cube_map(){
     
     // stbi_set_flip_vertically_on_load(true);
     // float *data = stbi_loadf("assets/rogland_moonlit_night_4k.hdr", &width, &height, &channel, 4);
-    float *data = stbi_loadf("assets/cave_wall_4k.hdr", &width, &height, &channel, 4);
-    // float *data = stbi_loadf("assets/brown_photostudio_02_4k.hdr", &width, &height, &channel, 4);
+    // float *data = stbi_loadf("assets/cave_wall_4k.hdr", &width, &height, &channel, 4);
+    float *data = stbi_loadf("assets/brown_photostudio_02_4k.hdr", &width, &height, &channel, 4);
     
     if (data)
     {
