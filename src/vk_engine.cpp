@@ -2488,7 +2488,7 @@ void VulkanEngine::load_cube_map(){
         uint32_t irrSize = 32;
         VkExtent3D irradianceMapSize = {irrSize, irrSize, 1};
 
-        _cubeMapHDRTexture = create_image(cubemapSize, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_VIEW_TYPE_CUBE, true);
+        _cubeMapHDRTexture = create_image(cubemapSize, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_VIEW_TYPE_CUBE, false);
         _irradianceMapTexture = create_image(irradianceMapSize, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_VIEW_TYPE_CUBE,false);
         _brdfLUTTexture = create_image(cubemapSize, VK_FORMAT_R16G16_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_VIEW_TYPE_2D,false);
         
@@ -2496,7 +2496,7 @@ void VulkanEngine::load_cube_map(){
     }
     else
     {
-        fmt::print("failed to load hdr\n");        
+        fmt::println("failed to load hdr");        
     }  
 
        
@@ -2603,6 +2603,7 @@ void VulkanEngine::render_skybox(VkCommandBuffer cmd, VkRenderingInfo& renderInf
 
     writer.write_buffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     //skybox cube map texture that gets sent to the skybox shader to render the skybox
+    //writer.write_image(3, _cubeMapTextures.imageView, _defaultCubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.write_image(3, _cubeMapHDRTexture.imageView, _defaultCubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.write_image(4, _irradianceMapTexture.imageView, _defaultCubeSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     writer.update_set(_device, globalDescriptor);
@@ -2770,7 +2771,60 @@ void VulkanEngine::init_rect_to_cube_pipeline(){
 		});
 }
 
-void VulkanEngine::convert_to_cube(){
+//void VulkanEngine::convert_to_cube(){
+//    /*
+//    VK_CHECK(vkResetFences(_device, 1, &get_current_frame()._renderFence));
+//    VkCommandBuffer cmd = get_current_frame()._mainCommandBuffer;
+//    VK_CHECK(vkResetCommandBuffer(cmd, 0));
+//    VkCommandBufferBeginInfo cmdInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+//    VK_CHECK(vkBeginCommandBuffer(cmd, &cmdInfo));
+//    */
+//
+//    very weird behavior noticed that _cubeMapTextures doesn't 
+//    get overwritten after the vkCmdDispatch. Is it not being dispatched?
+//
+//     used _gravelImage and it was still black. -confirmed that it's not a corrupted loaded hdr.
+//     This only leaves out the option that _cubeMapHDRTexture is not being updated by the compute shader.
+//         is a the compute shader issue, pipelin issue, or something else?
+//    
+//    immediate_submit([&](VkCommandBuffer cmd) {
+//        vkutil::transition_image(cmd, _loadedHDRTexture.image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
+//        vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,6);
+//        
+//
+//        //////generate the cube map from the hdr texture/////////////
+//        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _rectToCubeEffect.pipeline);
+//
+//         bind the descriptor set containing the draw image for the compute pipeline
+//        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _rectToCubePipelineLayout, 0, 1, &_rectToCubeDescriptor, 0, nullptr);
+//
+//        DescriptorWriter writer;
+//        writer.write_image(0, _loadedHDRTexture.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+//        writer.write_image(1, _cubeMapHDRTexture.imageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+//        writer.update_set(_device, _rectToCubeDescriptor);
+//        writer.clear();
+//
+//         execute the compute pipeline dispatch. We are using 16x16 workgroup size so we need to divide by it
+//        uint32_t faceSize = _cubeMapHDRTexture.imageExtent.width; //the width is equal to the height
+//        vkCmdDispatch(cmd, std::ceil(faceSize / 16.0), std::ceil(faceSize / 16.0), 6);
+//        vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6);
+//
+//
+//    });
+//
+//    /*
+//    VK_CHECK(vkEndCommandBuffer(cmd));
+//
+//    VkCommandBufferSubmitInfo cmdSubmitInfo = vkinit::command_buffer_submit_info(cmd);
+//     VkSemaphoreSubmitInfo waitSemaphore = vkinit::semaphore_submit_info(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, get_current_frame()._swapchainSemaphore);
+//     VkSemaphoreSubmitInfo signalSemaphore = vkinit::semaphore_submit_info(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT, get_current_frame()._renderSemaphore);
+//    VkSubmitInfo2 submit = vkinit::submit_info(&cmdSubmitInfo, nullptr, nullptr);
+//    VK_CHECK(vkQueueSubmit2(_graphicsQueue, 1, &submit, get_current_frame()._renderFence));
+//    */
+//    
+//}
+
+void VulkanEngine::convert_to_cube() {
     /*
     VK_CHECK(vkResetFences(_device, 1, &get_current_frame()._renderFence));
     VkCommandBuffer cmd = get_current_frame()._mainCommandBuffer;
@@ -2781,8 +2835,8 @@ void VulkanEngine::convert_to_cube(){
 
     immediate_submit([&](VkCommandBuffer cmd) {
         vkutil::transition_image(cmd, _loadedHDRTexture.image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
-        vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,6);
-        vkutil::transition_image(cmd, _irradianceMapTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,6);
+        vkutil::transition_image(cmd, _cubeMapHDRTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 6);
+        vkutil::transition_image(cmd, _irradianceMapTexture.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 6);
 
 
         ////////generate the cube map from the hdr texture/////////////
@@ -2900,7 +2954,7 @@ void VulkanEngine::convert_to_cube(){
 
 
 
-    });
+        });
 
     /*
     VK_CHECK(vkEndCommandBuffer(cmd));
@@ -2911,5 +2965,5 @@ void VulkanEngine::convert_to_cube(){
     VkSubmitInfo2 submit = vkinit::submit_info(&cmdSubmitInfo, nullptr, nullptr);
     VK_CHECK(vkQueueSubmit2(_graphicsQueue, 1, &submit, get_current_frame()._renderFence));
     */
-    
+
 }

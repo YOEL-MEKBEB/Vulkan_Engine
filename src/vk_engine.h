@@ -132,7 +132,7 @@ struct GLTFMetallic_Roughness {
 		glm::vec4 metal_rough_factors;
 		glm::vec4 emissive_factors;
 		//padding, we need it anyway for uniform buffers
-		glm::vec4 extra[10];
+		glm::vec4 extra[16];
 	};
 
 	struct MaterialResources {
