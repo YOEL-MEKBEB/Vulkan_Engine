@@ -9,8 +9,10 @@
 #include <functional>
 //#include <sys/_types/_u_int32_t.h>
 #include <cstdint>
+#include <memory>
 #include <vk_initializers.h>
 #include <vk_types.h>
+#include "shadowPipeline.h"
 #include "vk_descriptors.h"
 #include "vk_images.h"
 
@@ -174,6 +176,7 @@ void VulkanEngine::cleanup(){
         //make sure the gpu has stopped doing its things
     		vkDeviceWaitIdle(_device);
         loadedScenes.clear();
+        shadowPipeline->clear();
 
         // metalRoughMaterial.clear_resources(_device);                                 
     		for (int i = 0; i < FRAME_OVERLAP; i++) {
@@ -261,7 +264,8 @@ void VulkanEngine::draw(){
     //render the shadow map by making it writable as a depth buffer then
     //changing it into a readable texture for draw_geometry
     vkutil::transition_image(cmd, _lightDepthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-    render_shadow_map(cmd);
+    // render_shadow_map(cmd);
+    shadowPipeline->render_shadow_map(cmd, get_current_frame(), lightDrawContext, shadowSceneData);
     // vkutil::transition_image(cmd, _lightDepthImage.image, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     /// manual transition because the transition image function will convert to VK_IMAGE_ASPECT_COLOR_BIT
@@ -681,8 +685,8 @@ void VulkanEngine::init_swapchain(){
     		vmaDestroyImage(_allocator, _drawImage.image, _drawImage.allocation);
     		vkDestroyImageView(_device, _depthImage.imageView, nullptr);
     		vmaDestroyImage(_allocator, _depthImage.image, _depthImage.allocation);
-    		vkDestroyImageView(_device, _lightDepthImage.imageView, nullptr);
-    		vmaDestroyImage(_allocator, _lightDepthImage.image, _lightDepthImage.allocation);
+    		// vkDestroyImageView(_device, _lightDepthImage.imageView, nullptr);
+    		// vmaDestroyImage(_allocator, _lightDepthImage.image, _lightDepthImage.allocation);
     	});
 }
 
@@ -819,12 +823,6 @@ void VulkanEngine::init_descriptors(){
     	_gpuSceneDataDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
     }
 
-    //shadow map Descriptor set layuout
-    {
-    	DescriptorLayoutBuilder builder;
-    	builder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-    	_shadowSceneDataDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT );
-    }
 
     {
     	DescriptorLayoutBuilder builder;
@@ -891,7 +889,7 @@ void VulkanEngine::init_descriptors(){
         vkDestroyDescriptorSetLayout(_device, _drawImageDescriptorLayout, nullptr);
         vkDestroyDescriptorSetLayout(_device, _gpuSceneDataDescriptorLayout, nullptr);
         vkDestroyDescriptorSetLayout(_device, _singleImageDescriptorLayout, nullptr);
-        vkDestroyDescriptorSetLayout(_device, _shadowSceneDataDescriptorLayout, nullptr);
+        // vkDestroyDescriptorSetLayout(_device, _shadowSceneDataDescriptorLayout, nullptr);
         vkDestroyDescriptorSetLayout(_device, _rectToCubeDescriptorLayout, nullptr);
         vkDestroyDescriptorSetLayout(_device, _brdfLUTDescriptorLayout, nullptr);
     });
@@ -919,7 +917,7 @@ void VulkanEngine::init_pipelines(){
     // init_triangle_pipeline();
     init_mesh_pipeline();
     metalRoughMaterial.build_pipelines(this);
-    init_shadow_map_pipeline();
+    shadowPipeline = std::make_unique<ShadowPipeline>(_device, _lightDepthImage, _allocator);
     init_skybox_pipeline();
     init_rect_to_cube_pipeline();
     init_default_data();
@@ -1402,6 +1400,8 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
         vkCmdPushConstants(cmd,draw.material->pipeline->layout ,VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(GPUDrawPushConstants), &pushConstants);
         // vkCmdPushConstants(cmd, draw.material->pipeline->layout, VK_SHADER_STAGE_FRAGMENT_BIT,sizeof(GPUDrawPushConstants), sizeof(int), &draw.useNormal);
 
+        //drawing 1 instance
+        // TODO: make this instanced rendering instead 
         vkCmdDrawIndexed(cmd,draw.indexCount,1,draw.firstIndex,0,0);
 
         stats.drawcall_count++;
@@ -2003,6 +2003,7 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine){
     pipelineBuilder._pipelineLayout = newLayout;
     pipelineBuilder.set_shaders(meshVertexShader, meshFragShader);
     pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST); 
+    // pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_LINE);
     pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
     pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
     pipelineBuilder.set_multisampling_none();
@@ -2204,179 +2205,6 @@ void VulkanEngine::update_scene(){
     loadedScenes["donut"]->Draw(smallTranslate * scale, lightDrawContext);
 }
  
-void VulkanEngine::init_shadow_map_pipeline(){
-        
-    // VkShaderModule shadowFragShader;
-    // if (!vkutil::load_shader_module("shaders/mesh_phong.frag.spv", engine->_device, &meshFragShader)) {
-    //     fmt::println("Error when building the triangle fragment shader module");
-    // }
-
-
-    fmt::print("initialize shadow began\n");
-    VkShaderModule shadowVertexShader;
-    if (!vkutil::load_shader_module("shaders/shadow_map.vert.spv", _device, &shadowVertexShader)) {
-        fmt::println("Error when building the triangle vertex shader module");
-    }
-
-    
-    VkPushConstantRange matrixRange{};
-    matrixRange.offset = 0;
-    matrixRange.size = sizeof(GPUDrawPushConstants);
-    matrixRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    DescriptorLayoutBuilder builder;
-    builder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-    builder.add_binding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    builder.add_binding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-
-    
-
-    // VkDescriptorSetLayout shadowDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT);
-    VkDescriptorSetLayout layouts[] = {_shadowSceneDataDescriptorLayout};
-    
-    VkPipelineLayoutCreateInfo pipeline_layout_info = vkinit::pipeline_layout_create_info();
-    pipeline_layout_info.pPushConstantRanges = &matrixRange;
-    pipeline_layout_info.pushConstantRangeCount = 1;
-    pipeline_layout_info.pSetLayouts = layouts;
-    pipeline_layout_info.setLayoutCount = 1; 
-
-    VkPipelineLayout newLayout;
-    VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &newLayout));
-    
-    _shadowPipelineLayout = newLayout;
-
-    PipelineBuilder pipelineBuilder;
-    pipelineBuilder._pipelineLayout = newLayout;
-
-    //sending NULL as the fragment shader to set_shaders will cause seg fault.
-    // pipelineBuilder.set_shaders(shadowVertexShader, NULL);
-
-    //manually setting the shaders
-    pipelineBuilder._shaderStages.clear();
-    pipelineBuilder._shaderStages.push_back(
-        vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, shadowVertexShader)
-    );
-
-    pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
-    pipelineBuilder.set_cull_mode(VK_CULL_MODE_FRONT_BIT, VK_FRONT_FACE_CLOCKWISE);
-    pipelineBuilder.set_multisampling_none();
-
-    pipelineBuilder.disable_blending();
-    pipelineBuilder.enable_depth_test(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
-    // pipelineBuilder.enable_depth_test(true, VK_COMPARE_OP_LESS_OR_EQUAL);
-    pipelineBuilder.set_depth_format(_lightDepthImage.imageFormat);
-    pipelineBuilder.set_color_attachment_format(VK_FORMAT_UNDEFINED);
-
-    _shadowPipeline = pipelineBuilder.build_pipeline(_device);
-
-    fmt::print("shadow initialization complete\n");
-
-    vkDestroyShaderModule(_device, shadowVertexShader, nullptr);
-
-    //delete the pipeline and pipelin layout
-    // almost forgot on previous runs. Validation layers not happy :(
-    _mainDeletionQueue.push_function([&](){
-        vkDestroyPipeline(_device, _shadowPipeline, nullptr);
-        vkDestroyPipelineLayout(_device, _shadowPipelineLayout, nullptr);                                 
-     });
-    
-}
-
-
-void VulkanEngine::render_shadow_map(VkCommandBuffer cmd){
-
-    std::vector<uint32_t> light_opaque_draws;
-    light_opaque_draws.reserve(lightDrawContext.OpaqueSurfaces.size());
-   
-    // glm::mat4 lightproj = glm::ortho(-(float)(2 * _windowExtent.width), (float)(2 * _windowExtent.width), -(float)(2 * _windowExtent.height), (float)(2 * _windowExtent.height), 10000.f, 0.1f); 
-    // float sizew = (float)_windowExtent.width/2.f;
-    // float sizeh = (float)_windowExtent.height/2.f;
-    // glm::mat4 lightproj = glm::ortho(-sizew, sizew, -sizeh, sizeh, 10000.f, 0.1f);
-    // lightproj[1][1] *= -1;
-
-    for (uint32_t i = 0; i < lightDrawContext.OpaqueSurfaces.size(); i++) {
-        if(is_visible(lightDrawContext.OpaqueSurfaces[i], shadowSceneData.proj * shadowSceneData.view))
-            light_opaque_draws.push_back(i);
-    }
-
-    std::sort(light_opaque_draws.begin(), light_opaque_draws.end(), [&](const auto& iA, const auto& iB) {
-        const RenderObject& A = lightDrawContext.OpaqueSurfaces[iA];
-        const RenderObject& B = lightDrawContext.OpaqueSurfaces[iB];
-        if (A.material == B.material) {
-            return A.indexBuffer < B.indexBuffer;
-        }
-        else {
-            return A.material < B.material;
-        }
-    });
-
-    VkExtent2D lightImageExtent = {
-         _lightDepthImage.imageExtent.width,
-         _lightDepthImage.imageExtent.height
-    };
-    VkRenderingAttachmentInfo lightDepthAttachment = vkinit::depth_attachment_info(_lightDepthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-    VkRenderingInfo shadowRenderInfo = vkinit::rendering_info(lightImageExtent, nullptr, &lightDepthAttachment);
-    shadowRenderInfo.colorAttachmentCount = 0; //rendering_info() sets it to one even if nullptr is being passed
-
-    vkCmdBeginRendering(cmd, &shadowRenderInfo);
-    
-    
-    VkViewport viewport = {};
-    viewport.x = 0;
-    viewport.y = 0;
-    viewport.width = lightImageExtent.width;
-    viewport.height = lightImageExtent.height;
-    viewport.minDepth = 0.f;
-    viewport.maxDepth = 1.f;
-
-    vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-    VkRect2D scissor = {};
-    scissor.offset.x = 0;
-    scissor.offset.y = 0;
-    scissor.extent.width = lightImageExtent.width;
-    scissor.extent.height = lightImageExtent.height;
-
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-    AllocatedBuffer gpuSceneDataBuffer = create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-    get_current_frame()._deletionQueue.push_function([=, this]() {
-        destroy_buffer(gpuSceneDataBuffer);
-    });
-
-    GPUSceneData* sceneUniformData = (GPUSceneData*)gpuSceneDataBuffer.allocation->GetMappedData();
-    *sceneUniformData = shadowSceneData;
-    
-    VkDescriptorSet globalDescriptor = get_current_frame()._frameDescriptors.allocate(_device, _shadowSceneDataDescriptorLayout);
-    
-    DescriptorWriter writer;
-    writer.write_buffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-    writer.update_set(_device, globalDescriptor);
-
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _shadowPipeline);
-    
-    vkCmdBindDescriptorSets(cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,_shadowPipelineLayout, 0,1, &globalDescriptor,0,nullptr );
-
-    //need a new pipeline.
-
-  
-     for (const RenderObject& draw : lightDrawContext.OpaqueSurfaces) {
-
-         vkCmdBindIndexBuffer(cmd, draw.indexBuffer,0,VK_INDEX_TYPE_UINT32);
-
-         GPUDrawPushConstants pushConstants;
-         pushConstants.vertexBuffer = draw.vertexBufferAddress;
-         pushConstants.worldMatrix = draw.transform;
-         vkCmdPushConstants(cmd,_shadowPipelineLayout,VK_SHADER_STAGE_VERTEX_BIT,0, sizeof(GPUDrawPushConstants), &pushConstants);
-
-         vkCmdDrawIndexed(cmd,draw.indexCount,1,draw.firstIndex,0,0);
-     }
-    
-     vkCmdEndRendering(cmd);
-
-}
 
 void VulkanEngine::load_cube_map(){
 
@@ -2896,7 +2724,7 @@ void VulkanEngine::convert_to_cube(){
         uint32_t irrSize = _irradianceMapTexture.imageExtent.width;
         vkCmdDispatch(cmd, std::ceil(irrSize / 16.0), std::ceil(irrSize / 16.0), 6);
         vkutil::transition_image(cmd, _irradianceMapTexture.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6);
-        /////////////////////////////////////////////////////
+        ///////////////////////////////////////////////////// c
 
 
 

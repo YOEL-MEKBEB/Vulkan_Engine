@@ -57,6 +57,18 @@ struct Vertex {
 	glm::vec4 tangent = glm::vec4(0.f, 0.f, 0.f, 0.f);
 };
 
+struct GPUSceneData {
+    glm::mat4 view;
+    glm::mat4 proj;
+    glm::mat4 viewproj;
+    glm::vec4 ambientColor;
+    glm::vec4 specularColor;
+    glm::vec4 sunlightDirection; // w for sun power
+    glm::vec4 sunlightColor;
+    glm::vec4 cameraPosition;
+    int shininess;
+};
+
 // holds the resources needed for a mesh
 struct GPUMeshBuffers {
 

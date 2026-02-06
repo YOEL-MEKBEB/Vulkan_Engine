@@ -34,6 +34,11 @@ layout( push_constant ) uniform constants
 {
 	mat4 render_matrix;
 	VertexBuffer vertexBuffer;
+	int useNormal;
+	int useMetalTex;
+	int useAOTex;
+	int useORM;
+	int useEmissive;
 } PushConstants;
 
 

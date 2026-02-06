@@ -7,11 +7,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <vector>
 #include <vk_types.h>
 #include "vk_descriptors.h"
 #include <glm/glm.hpp>
 #include <vk_loader.h>
+#include <shadowPipeline.h>
 #include <camera.h>
 
 // All of the stats for debugging and displaying
@@ -73,17 +75,6 @@ struct AllocatedImage {
     VkFormat imageFormat;
 };
 
-struct GPUSceneData {
-    glm::mat4 view;
-    glm::mat4 proj;
-    glm::mat4 viewproj;
-    glm::vec4 ambientColor;
-    glm::vec4 specularColor;
-    glm::vec4 sunlightDirection; // w for sun power
-    glm::vec4 sunlightColor;
-    glm::vec4 cameraPosition;
-    int shininess;
-};
 
 struct FrameData{
 	//A VkCommandPool is created from the VkDevice, and you
@@ -293,6 +284,7 @@ public:
 	AllocatedImage _depthImage; //depth testing image
 	AllocatedImage _lightDepthImage; //shadow map image
 	VkExtent2D _drawExtent;
+  std::unique_ptr<ShadowPipeline> shadowPipeline;
 	////////////////////////////////////////////////////////
 
 	
@@ -451,13 +443,13 @@ private:
 	void init_descriptors(); //initialize the descriptor sets
 	void init_pipelines(); //calls all the pipeline initialization function
 	void init_background_pipelines(); //initialize the compute shader pipeline
-	void init_shadow_map_pipeline(); // initializes the shadow maps rendering pipeline
+	// void init_shadow_map_pipeline(); // initializes the shadow maps rendering pipeline
 	void init_skybox_pipeline();
 	void init_mesh_pipeline(); //initialize the mesh pipelines
 	void init_imgui(); 
 	void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
 	void init_default_data(); //set the default data for textures and transformations
-	void render_shadow_map(VkCommandBuffer cmd);
+	// void render_shadow_map(VkCommandBuffer cmd);
 	void render_skybox(VkCommandBuffer cmd, VkRenderingInfo& renderInfo);
 	void load_cube_map();
 	void init_rect_to_cube_pipeline();

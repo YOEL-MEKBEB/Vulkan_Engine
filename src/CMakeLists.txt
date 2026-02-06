@@ -17,6 +17,8 @@ add_executable(engine
     vk_loader.h
     camera.cpp
     camera.h
+    shadowPipeline.cpp
+    shadowPipeline.h
     )
 
 
