@@ -19,6 +19,8 @@ add_executable(engine
     camera.h
     shadowPipeline.cpp
     shadowPipeline.h
+    skybox.cpp
+    skybox.h
     )
 
 

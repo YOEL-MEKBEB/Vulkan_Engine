@@ -14,6 +14,7 @@
 #include <glm/glm.hpp>
 #include <vk_loader.h>
 #include <shadowPipeline.h>
+#include <skybox.h>
 #include <camera.h>
 
 // All of the stats for debugging and displaying
@@ -51,29 +52,7 @@ struct DeletionQueue{
 // 	float inColorY;
 // };
 
-struct ComputePushConstant{
-	glm::vec4 data1;
-	glm::vec4 data2;
-	glm::vec4 data3;
-	glm::vec4 data4;
-};
 
-struct ComputeEffect{
-	const char* name;
-
-	VkPipeline pipeline;
-	VkPipelineLayout layout;
-
-	ComputePushConstant data;
-};
-
-struct AllocatedImage {
-    VkImage image;
-    VkImageView imageView;
-    VmaAllocation allocation;
-    VkExtent3D imageExtent;
-    VkFormat imageFormat;
-};
 
 
 struct FrameData{
@@ -284,7 +263,6 @@ public:
 	AllocatedImage _depthImage; //depth testing image
 	AllocatedImage _lightDepthImage; //shadow map image
 	VkExtent2D _drawExtent;
-  std::unique_ptr<ShadowPipeline> shadowPipeline;
 	////////////////////////////////////////////////////////
 
 	
@@ -338,10 +316,8 @@ public:
 	///////////////////////////////////////////////
 
 	/////////////Shadow map pipeline and scene Data/////////////////
-	VkPipelineLayout _shadowPipelineLayout;
-	VkPipeline _shadowPipeline;
+  std::unique_ptr<ShadowPipeline> shadowPipeline;
 	GPUSceneData shadowSceneData;
-	VkDescriptorSetLayout _shadowSceneDataDescriptorLayout;
 	//////////////////////////////////////////////
 	
 	//////////////// Buffers /////////////////////
@@ -393,36 +369,10 @@ public:
 	AllocatedImage _gravelNormal;
 	//////////////////////////////////////////////
 
-	// std::vector<AllocatedImage> _cubeMapTextures;
-	AllocatedImage _cubeMapTextures;
-	AllocatedImage _cubeMapHDRTexture;
-	AllocatedImage _loadedHDRTexture;
-	AllocatedImage _irradianceMapTexture;
-	AllocatedImage _brdfLUTTexture;
-
-	VkDescriptorSetLayout _brdfLUTDescriptorLayout;
-	VkDescriptorSetLayout _rectToCubeDescriptorLayout;
-	VkDescriptorSetLayout _preFilterDescriptorLayout;
-
-	VkPipelineLayout _brdfLUTPipelineLayout;
-	VkPipelineLayout _rectToCubePipelineLayout;
-	VkPipelineLayout _preFilterPipelineLayout;
+	////////Skybox object used for everything related for rendering skybox and IBL//////
+	std::unique_ptr<Skybox> skybox;
+	///////////////////////////////////////////////////////////////////////////
 	
-	VkDescriptorSet _rectToCubeDescriptor;
-	VkDescriptorSet _irradianceDescriptor;
-	VkDescriptorSet _brdfLUTDescriptor;
-	VkDescriptorSet _preFilterDescriptor;
-	
-	ComputeEffect _rectToCubeEffect;
-	ComputeEffect _irradianceEffect;
-	ComputeEffect _preFilterEffect;
-	ComputeEffect _brdfLUTEffect;
-	
-	/////////////cubMap pipeline and scene Data/////////////
-	VkPipelineLayout _skyboxPipelineLayout;
-	VkPipeline _skyboxPipeline;
-	//////////////////////////////////////////////
-
 	//defualt PBR rendering datapoints///////////
 	glm::vec4 colorFactors = glm::vec4{1,1,1,1};
 	glm::vec4 metal_rough_factors = glm::vec4{0, 1, 0, 0};
@@ -443,15 +393,8 @@ private:
 	void init_descriptors(); //initialize the descriptor sets
 	void init_pipelines(); //calls all the pipeline initialization function
 	void init_background_pipelines(); //initialize the compute shader pipeline
-	// void init_shadow_map_pipeline(); // initializes the shadow maps rendering pipeline
-	void init_skybox_pipeline();
 	void init_mesh_pipeline(); //initialize the mesh pipelines
 	void init_imgui(); 
 	void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
 	void init_default_data(); //set the default data for textures and transformations
-	// void render_shadow_map(VkCommandBuffer cmd);
-	void render_skybox(VkCommandBuffer cmd, VkRenderingInfo& renderInfo);
-	void load_cube_map();
-	void init_rect_to_cube_pipeline();
-	void convert_to_cube();
 };
