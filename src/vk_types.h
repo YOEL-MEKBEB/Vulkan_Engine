@@ -110,7 +110,10 @@ struct GPUMeshBuffers {
 // matrices.
 struct GPUDrawPushConstants {
     glm::mat4 worldMatrix;
+    //using vkDeviceAddress because it will give me a
+    // pointer to a buffer defined on the GPU.
     VkDeviceAddress vertexBuffer;
+    VkDeviceAddress instanceBuffer;
     int useNormal;
     int useMetalTex;
     int useAOTex;

@@ -16,39 +16,6 @@ layout (location = 8) in flat int useSceneNormal;
 
 layout (location = 0) out vec4 outFragColor;
 
-// layout( push_constant ) uniform constants
-// {
-// 	layout (offset = 72) int useNormal;
-// 	layout (offset = 76) int useMetalTex;
-// 	layout (offset = 80) int useAOTex;
-// } PushConstants;
-struct Vertex {
-
-	vec3 position;
-	float uv_x;
-	vec3 normal;
-	float uv_y;
-	vec4 color;
-	vec4 tangent;
-};
-
-layout(buffer_reference, std430) readonly buffer VertexBuffer{ 
-	Vertex vertices[];
-};
-
-//push constants block
-layout( push_constant ) uniform constants
-{
-	mat4 render_matrix;
-	VertexBuffer vertexBuffer;
-	int useNormal;
-	int useMetalTex;
-	int useAOTex;
-	int useORM;
-	int useEmissive;
-} PushConstants;
-
-
 const float PI = 3.14159265359;
 
 float DistributionGGX(vec3 N, vec3 H, float roughness)

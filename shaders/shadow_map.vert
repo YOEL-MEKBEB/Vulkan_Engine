@@ -25,15 +25,23 @@ struct Vertex {
 	vec4 color;
 	vec4 tangent;
 }; 
+struct Instance {
+	mat4 model_matrix;
+};
 
 layout(buffer_reference, std430) readonly buffer VertexBuffer{ 
 	Vertex vertices[];
+};
+
+layout(buffer_reference, std430) readonly buffer InstanceBuffer{
+	Instance instances[];
 };
 
 layout( push_constant ) uniform constants
 {
 	mat4 render_matrix;
 	VertexBuffer vertexBuffer;
+	InstanceBuffer instanceBuffer;// this will contain all the instance data
 	int useNormal;
 	int useMetalTex;
 	int useAOTex;

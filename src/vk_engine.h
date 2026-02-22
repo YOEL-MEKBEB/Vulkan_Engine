@@ -150,6 +150,7 @@ struct RenderObject {
 		Bounds bounds;
     glm::mat4 transform;
     VkDeviceAddress vertexBufferAddress;
+    VkDeviceAddress instanceBufferAddress;
 
     int useNormal = 0; //only do normal mapping for objects that have a normal texture.
     //accounting for cases where the metalRoughnessTexture could be a grayscale image
@@ -328,6 +329,7 @@ public:
 	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
 	void destroy_buffer(const AllocatedBuffer& buffer);
 	GPUMeshBuffers cube;
+	AllocatedBuffer instanceBuffer;
 	////////////////////////////////////////////////
 
 	//////////////// Images /////////////////////////

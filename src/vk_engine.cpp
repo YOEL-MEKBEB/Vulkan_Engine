@@ -3,6 +3,7 @@
 #include <SDL.h>
 #include <SDL_vulkan.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -1129,11 +1130,50 @@ void VulkanEngine::init_triangle_pipeline(){
 
 void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
 
+    //TODO: so this culling method will generalize for all instances. So if the original object
+    // is not in view then all instances are not in view. This needs to be fixed but not sure what to
+    // do.
+    
+    VkBufferDeviceAddressInfo deviceAdressInfo{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+        .buffer = instanceBuffer.buffer};
+    
+    // std::array<glm::mat4, 2> instanceMatrices = {glm::mat4(1.f), glm::translate(glm::mat4(1.f), glm::vec3(0, 0, -10))};
+    // const size_t instanceSize = instanceMatrices.size() * sizeof(glm::mat4);
+    // AllocatedBuffer instanceBuffer = create_buffer(instanceSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+    
+
+    // // this is a staging buffer to transfer the data from the CPU to GPU.
+    // // can't modify instanceBuffer from here because it is USAGE_GPU_ONLY.
+    // // so the idea is you create a USAGE_CPU_ONLY buffer, copy the data into it
+    // // and use the immediate submit for copying it into the GPU_ONLY buffer.
+    // AllocatedBuffer staging = create_buffer(instanceSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
+    // void* data = staging.allocation->GetMappedData();
+
+    // VkBufferDeviceAddressInfo deviceAdressInfo{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+    //     .buffer = instanceBuffer.buffer};
+
+    // memcpy(data, instanceMatrices.data(), instanceSize);
+
+    // immediate_submit([&](VkCommandBuffer cmd){
+    //     VkBufferCopy instanceCopy{ 0 };
+    //     instanceCopy.dstOffset = 0;
+    //     instanceCopy.srcOffset = 0;
+    //     instanceCopy.size = instanceSize;
+
+    //     vkCmdCopyBuffer(cmd, staging.buffer, instanceBuffer.buffer, 1, &instanceCopy);
+
+    // });
+    
+    // destroy_buffer(staging);
+    // get_current_frame()._deletionQueue.push_function([=, this](){
+    //   destroy_buffer(instanceBuffer);                                                   
+    //  });
+    
     std::vector<uint32_t> opaque_draws;
     opaque_draws.reserve(mainDrawContext.OpaqueSurfaces.size());
 
     for (uint32_t i = 0; i < mainDrawContext.OpaqueSurfaces.size(); i++) {
-        if(is_visible(mainDrawContext.OpaqueSurfaces[i], sceneData.viewproj))
+        // if(is_visible(mainDrawContext.OpaqueSurfaces[i], sceneData.viewproj))
             opaque_draws.push_back(i);
     }
 
@@ -1367,6 +1407,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
 
         GPUDrawPushConstants pushConstants;
         pushConstants.vertexBuffer = draw.vertexBufferAddress;
+        pushConstants.instanceBuffer = vkGetBufferDeviceAddress(_device, &deviceAdressInfo);
         pushConstants.worldMatrix = draw.transform;
         pushConstants.useNormal = draw.useNormal;
         pushConstants.useMetalTex = draw.useMetalTex;
@@ -1378,8 +1419,15 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd){
         // vkCmdPushConstants(cmd, draw.material->pipeline->layout, VK_SHADER_STAGE_FRAGMENT_BIT,sizeof(GPUDrawPushConstants), sizeof(int), &draw.useNormal);
 
         //drawing 1 instance
-        // TODO: make this instanced rendering instead 
-        vkCmdDrawIndexed(cmd,draw.indexCount,1,draw.firstIndex,0,0);
+        // DONE: make this instanced rendering instead 
+        //void vkCmdDrawIndexed(
+        // VkCommandBuffer                             commandBuffer,
+        // uint32_t                                    indexCount,
+        // uint32_t                                    instanceCount,
+        // uint32_t                                    firstIndex,
+        // int32_t                                     vertexOffset,
+        // uint32_t                                    firstInstance);
+        vkCmdDrawIndexed(cmd, draw.indexCount, 100, draw.firstIndex, 0, 0);
 
         stats.drawcall_count++;
         stats.triangle_count += draw.indexCount / 3;   
@@ -1818,6 +1866,44 @@ void VulkanEngine::init_default_data() {
 
     // convert_to_cube();
     skybox->convert_to_cube(this);
+
+    ////////allocate all the instance transformation matrices
+    int gridSize = 100;
+    float spacing = 2.5f; // Tweak this depending on the base size of your loaded mesh
+    
+    std::vector<glm::mat4> instanceMatrices;
+    instanceMatrices.reserve(gridSize * gridSize); // Prevent vector reallocations in the hot loop
+
+    for (int x = 0; x < gridSize; x++) {
+        for (int z = 0; z < gridSize; z++) {
+            // Center the grid around the origin
+            float posX = (x - (gridSize / 2.0f)) * spacing + 110;
+            float posZ = (z - (gridSize / 2.0f)) * spacing;
+            
+            // Add a little wave on the Y axis just to make it visually interesting
+            float posY = std::sin(posX * 0.5f) * std::cos(posZ * 0.5f);
+
+            glm::mat4 model = glm::translate(glm::vec3(posX, posY, posZ));
+            
+            // Optional: Shrink them slightly so they don't overlap wildly
+            model = glm::scale(model, glm::vec3(0.5f)); 
+
+            instanceMatrices.push_back(model);
+        }
+    }
+
+    const size_t instanceSize = instanceMatrices.size() * sizeof(glm::mat4);
+    instanceBuffer = create_buffer(
+        instanceSize, 
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, 
+        VMA_MEMORY_USAGE_CPU_TO_GPU
+    );
+    void* instance_data = instanceBuffer.allocation->GetMappedData();
+    memcpy(instance_data, instanceMatrices.data(), instanceSize);
+
+    _mainDeletionQueue.push_function([=, this](){
+      destroy_buffer(instanceBuffer);                                                   
+     });
 }
 
 AllocatedImage VulkanEngine::create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, VkImageViewType viewType, bool mipmapped){
@@ -2172,11 +2258,11 @@ void VulkanEngine::update_scene(){
 
     // loadedScenes
     // loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
-    loadedScenes["virtual city"]->Draw(translate, mainDrawContext);
+    // loadedScenes["virtual city"]->Draw(translate, mainDrawContext);
     loadedScenes["donut"]->Draw(smallTranslate * scale, mainDrawContext);
     
     // loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, lightDrawContext);
-    loadedScenes["virtual city"]->Draw(translate, lightDrawContext);
+    // loadedScenes["virtual city"]->Draw(translate, lightDrawContext);
     loadedScenes["donut"]->Draw(smallTranslate * scale, lightDrawContext);
 }
  

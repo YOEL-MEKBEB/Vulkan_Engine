@@ -16,35 +16,10 @@ layout (location = 7) out vec4 lightDirectionTangent;
 layout (location = 8) out int useSceneNormal;
 layout (location = 9) out vec3 skyboxTexCoords;
 
-struct Vertex {
-
-	vec3 position;
-	float uv_x;
-	vec3 normal;
-	float uv_y;
-	vec4 color;
-	vec4 tangent;
-};
-
-layout(buffer_reference, std430) readonly buffer VertexBuffer{ 
-	Vertex vertices[];
-};
-
-//push constants block
-layout( push_constant ) uniform constants
-{
-	mat4 render_matrix;
-	VertexBuffer vertexBuffer;
-	int useNormal;
-	int useMetalTex;
-	int useAOTex;
-	int useORM;
-	int useEmissive;
-} PushConstants;
-
 void main() 
 {
 	Vertex v = PushConstants.vertexBuffer.vertices[gl_VertexIndex];
+	mat4 model_matrix = PushConstants.instanceBuffer.instances[gl_InstanceIndex].model_matrix * PushConstants.render_matrix;
 	
 	vec4 position = vec4(v.position, 1.0f);
 
@@ -89,24 +64,38 @@ void main()
     	tangent = v.tangent.rgb;
     	useSceneNormal = 1;
     }
-    //using the gram-shmidt process to calculate the bitangent vector;
-    vec3 T = normalize(vec3(PushConstants.render_matrix * vec4(tangent, 0.0)));
+    // using the gram-shmidt process to calculate the bitangent vector;
+     // vec3 T = normalize(vec3(PushConstants.render_matrix * vec4(tangent, 0.0)));
+     // // vec3 B = normalize(vec3(normalMatrix * vec4(bitangent, 0.0)));
+     // vec3 N = normalize(vec3(PushConstants.render_matrix * vec4(v.normal, 0.0)));
+    vec3 T = normalize(vec3(model_matrix * vec4(tangent, 0.0)));
     // vec3 B = normalize(vec3(normalMatrix * vec4(bitangent, 0.0)));
-    vec3 N = normalize(vec3(PushConstants.render_matrix * vec4(v.normal, 0.0)));
+    vec3 N = normalize(vec3(model_matrix * vec4(v.normal, 0.0)));
     T = normalize(T - (dot(T, N) * N));
     vec3 B = cross(N, T);
     mat3 TBN = mat3(T, B, N);
 
     TBN = transpose(TBN);
-    outPositionTangent = vec4(TBN * (PushConstants.render_matrix * position).xyz, 1.0);
+    outPositionTangent = vec4(TBN * (model_matrix * position).xyz, 1.0);
     cameraPositionTangent = vec4(TBN * sceneData.cameraPosition.xyz, 1.0);
     lightDirectionTangent = vec4(TBN * sceneData.sunlightDirection.xyz, 1.0);
 	
-	gl_Position =  sceneData.viewproj * PushConstants.render_matrix *position;
+	gl_Position =  sceneData.viewproj * model_matrix *position;
 
-	outNormal = normalize((PushConstants.render_matrix * vec4(v.normal, 0.f)).xyz);
+	outNormal = normalize((model_matrix * vec4(v.normal, 0.f)).xyz);
 	outColor = v.color * materialData.colorFactors;	
 	outUV.x = v.uv_x;
 	outUV.y = v.uv_y;
-	lightview_position = shadowSceneData.viewproj * PushConstants.render_matrix * position;
+	lightview_position = shadowSceneData.viewproj * model_matrix * position;
+ //    outPositionTangent = vec4(TBN * (PushConstants.render_matrix * position).xyz, 1.0);
+ //    cameraPositionTangent = vec4(TBN * sceneData.cameraPosition.xyz, 1.0);
+ //    lightDirectionTangent = vec4(TBN * sceneData.sunlightDirection.xyz, 1.0);
+	
+	// gl_Position =  sceneData.viewproj * PushConstants.render_matrix *position;
+
+	// outNormal = normalize((PushConstants.render_matrix * vec4(v.normal, 0.f)).xyz);
+	// outColor = v.color * materialData.colorFactors;	
+	// outUV.x = v.uv_x;
+	// outUV.y = v.uv_y;
+	// lightview_position = shadowSceneData.viewproj * PushConstants.render_matrix * position;
 }
